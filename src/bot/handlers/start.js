@@ -39,11 +39,7 @@ function registerStartHandlers(bot) {
     }
   });
 
-  // Заглушки для inline-кнопок (будут реализованы в следующих этапах)
-  bot.action('action_today_plan', async (ctx) => {
-    await ctx.answerCbQuery();
-    await ctx.reply('🚧 Планирование дня будет доступно в следующем обновлении.');
-  });
+  // action_today_plan обрабатывается в handlers/plan.js
 
   bot.action('action_current_sprint', async (ctx) => {
     await ctx.answerCbQuery();
