@@ -1,8 +1,9 @@
-const { Telegraf } = require('telegraf');
+const { Telegraf, Scenes, session } = require('telegraf');
 require('dotenv').config();
 
 const { loggerMiddleware } = require('./middleware/logger');
 const { registerStartHandlers } = require('./handlers/start');
+const { onboardingScene } = require('./scenes/onboarding');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -14,6 +15,11 @@ bot.catch((err, ctx) => {
 
 // Middleware
 bot.use(loggerMiddleware);
+
+// Session + Scenes
+const stage = new Scenes.Stage([onboardingScene]);
+bot.use(session());
+bot.use(stage.middleware());
 
 // Handlers
 registerStartHandlers(bot);

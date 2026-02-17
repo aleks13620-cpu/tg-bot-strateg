@@ -1,5 +1,6 @@
 const { findOrCreateUser } = require('../../database/queries/users');
 const { mainMenuKeyboard } = require('../../utils/keyboards');
+const { getActiveSprint, formatSprint } = require('../../services/sprint');
 
 function registerStartHandlers(bot) {
   bot.command('start', async (ctx) => {
@@ -46,7 +47,32 @@ function registerStartHandlers(bot) {
 
   bot.action('action_current_sprint', async (ctx) => {
     await ctx.answerCbQuery();
-    await ctx.reply('🚧 Спринты будут доступны в следующем обновлении.');
+    try {
+      const { data: user } = await require('../../database/queries/users').getUserByTelegramId(ctx.from.id);
+      if (!user) {
+        await ctx.reply('Профиль не найден. Используйте /start.');
+        return;
+      }
+      const { data: sprint } = await getActiveSprint(user.id);
+      if (!sprint) {
+        await ctx.reply(
+          'У вас нет активного спринта.\n\nХотите создать?',
+          require('telegraf').Markup.inlineKeyboard([
+            [require('telegraf').Markup.button.callback('🚀 Создать спринт', 'action_new_sprint')],
+          ])
+        );
+        return;
+      }
+      await ctx.reply(formatSprint(sprint), { parse_mode: 'Markdown' });
+    } catch (error) {
+      console.error('[SPRINT] Error:', error.message);
+      await ctx.reply('Ошибка при загрузке спринта.');
+    }
+  });
+
+  bot.action('action_new_sprint', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.scene.enter('onboarding');
   });
 
   bot.action('action_analytics', async (ctx) => {
