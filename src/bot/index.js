@@ -6,6 +6,7 @@ const { registerStartHandlers } = require('./handlers/start');
 const { registerPlanHandlers } = require('./handlers/plan');
 const { registerDayCloseHandlers } = require('./handlers/dayClose');
 const { registerProgressHandlers } = require('./handlers/progress');
+const { registerUploadHandlers } = require('./handlers/upload');
 const { onboardingScene } = require('./scenes/onboarding');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -29,6 +30,7 @@ registerStartHandlers(bot);
 registerPlanHandlers(bot);
 registerDayCloseHandlers(bot);
 registerProgressHandlers(bot);
+registerUploadHandlers(bot);
 
 // Запуск в polling-режиме (dev), если файл запущен напрямую
 if (require.main === module) {

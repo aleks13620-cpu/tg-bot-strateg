@@ -8,4 +8,9 @@ const mainMenuKeyboard = Markup.inlineKeyboard([
   [Markup.button.callback('⚙️ Настройки', 'action_settings')],
 ]);
 
-module.exports = { mainMenuKeyboard };
+// Экранирование спецсимволов Markdown v1 для Telegram
+function escapeMarkdown(text) {
+  return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+}
+
+module.exports = { mainMenuKeyboard, escapeMarkdown };

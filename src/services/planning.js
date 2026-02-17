@@ -28,7 +28,8 @@ function formatPlanItems(items) {
     return '📋 На сегодня задач нет.\n\nИспользуйте "📋 Мой план на сегодня" чтобы добавить задачи.';
   }
 
-  let text = '📋 *План на сегодня:*\n\n';
+  // Без Markdown в тексте задач — спецсимволы не ломают форматирование
+  let text = '📋 План на сегодня:\n\n';
   items.forEach((item, i) => {
     const statusIcon = item.status === 'done' ? '✅'
       : item.status === 'skipped' ? '⏭'

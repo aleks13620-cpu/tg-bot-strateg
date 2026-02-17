@@ -1,0 +1,25 @@
+name: Daily Reminders
+
+on:
+  schedule:
+    # Утреннее напоминание — 9:00 МСК (6:00 UTC)
+    - cron: '0 6 * * *'
+    # Вечернее напоминание — 19:00 МСК (16:00 UTC)
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+    inputs:
+      type:
+        description: 'Reminder type (morning/evening)'
+        required: true
+        default: 'morning'
+
+jobs:
+  send-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send reminder
+        run: |
+          TYPE="${{ github.event.inputs.type || (github.event.schedule == '0 6 * * *' && 'morning' || 'evening') }}"
+          curl -s -X POST \
+            "${{ secrets.VERCEL_URL }}/api/remind?type=${TYPE}&secret=${{ secrets.WEBHOOK_SECRET }}" \
+            -H "x-webhook-secret: ${{ secrets.WEBHOOK_SECRET }}"
