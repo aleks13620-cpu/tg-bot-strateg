@@ -4,6 +4,8 @@ require('dotenv').config();
 const { loggerMiddleware } = require('./middleware/logger');
 const { registerStartHandlers } = require('./handlers/start');
 const { registerPlanHandlers } = require('./handlers/plan');
+const { registerDayCloseHandlers } = require('./handlers/dayClose');
+const { registerProgressHandlers } = require('./handlers/progress');
 const { onboardingScene } = require('./scenes/onboarding');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -25,10 +27,15 @@ bot.use(stage.middleware());
 // Handlers
 registerStartHandlers(bot);
 registerPlanHandlers(bot);
+registerDayCloseHandlers(bot);
+registerProgressHandlers(bot);
 
 // Запуск в polling-режиме (dev), если файл запущен напрямую
 if (require.main === module) {
-  bot.launch()
+  // Удаляем webhook перед polling (иначе 409 конфликт)
+  bot.telegram.deleteWebhook().then(() => {
+    return bot.launch();
+  })
     .then(() => console.log('[BOT] Started in polling mode'))
     .catch((err) => {
       console.error('[BOT] Failed to start:', err);

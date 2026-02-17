@@ -71,10 +71,7 @@ function registerStartHandlers(bot) {
     await ctx.scene.enter('onboarding');
   });
 
-  bot.action('action_analytics', async (ctx) => {
-    await ctx.answerCbQuery();
-    await ctx.reply('🚧 Аналитика будет доступна в следующем обновлении.');
-  });
+  // action_analytics обрабатывается в handlers/progress.js
 
   bot.action('action_settings', async (ctx) => {
     await ctx.answerCbQuery();

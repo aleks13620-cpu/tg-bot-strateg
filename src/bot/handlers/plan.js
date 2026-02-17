@@ -30,7 +30,12 @@ function registerPlanHandlers(bot) {
         return;
       }
 
-      await ctx.reply(formatPlanItems(items), { parse_mode: 'Markdown' });
+      await ctx.reply(formatPlanItems(items), {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('➕ Добавить задачи', 'action_add_tasks')],
+        ]),
+      });
     } catch (error) {
       console.error('[PLAN] Error:', error.message);
       await ctx.reply('Ошибка при загрузке плана.');
@@ -58,11 +63,26 @@ function registerPlanHandlers(bot) {
         return;
       }
 
-      await ctx.reply(formatPlanItems(items), { parse_mode: 'Markdown' });
+      await ctx.reply(formatPlanItems(items), {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('➕ Добавить задачи', 'action_add_tasks')],
+        ]),
+      });
     } catch (error) {
       console.error('[PLAN] Error:', error.message);
       await ctx.reply('Ошибка при загрузке плана.');
     }
+  });
+
+  // Кнопка "Добавить задачи" к существующему плану
+  bot.action('action_add_tasks', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply(
+      '📝 Напишите новые задачи — каждая с новой строки:',
+      { parse_mode: 'Markdown' }
+    );
+    ctx.session.awaitingPlanInput = true;
   });
 
   // Обработка текстового ввода задач
