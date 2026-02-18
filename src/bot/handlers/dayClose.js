@@ -3,6 +3,8 @@ const { getUserByTelegramId } = require('../../database/queries/users');
 const { getPlanItemsByDate, updatePlanItem } = require('../../database/queries/planItems');
 const { getDayStats, formatDayStats } = require('../../services/analytics');
 const { getTodayDate } = require('../../services/planning');
+const { generateCoaching } = require('../../services/coaching/simpleCoaching');
+const { saveCoachingAnswer, getLastUnansweredQuestion } = require('../../database/queries/coaching');
 
 function registerDayCloseHandlers(bot) {
   // Команда /close — закрытие дня
@@ -38,9 +40,58 @@ function registerDayCloseHandlers(bot) {
       const date = getTodayDate();
       const stats = await getDayStats(user.id, date);
       await ctx.reply(formatDayStats(stats), { parse_mode: 'Markdown' });
+
+      // Коучинг после итогов дня
+      const coaching = await generateCoaching(user.id, date);
+      if (coaching) {
+        if (coaching.questionId) {
+          // Вопрос — предлагаем ответить
+          await ctx.reply(coaching.message, {
+            parse_mode: 'Markdown',
+            ...Markup.inlineKeyboard([
+              [Markup.button.callback('💬 Ответить', `coaching_answer_${coaching.questionId}`)],
+              [Markup.button.callback('⏭ Пропустить', 'coaching_skip')],
+            ]),
+          });
+        } else {
+          // Мотивационное сообщение — без кнопок
+          await ctx.reply(coaching.message);
+        }
+      }
     } catch (error) {
       console.error('[DAYCLOSE] Summary error:', error.message);
       await ctx.reply('Ошибка при формировании итогов.');
+    }
+  });
+
+  // Кнопка "Ответить" на коучинговый вопрос
+  bot.action(/^coaching_answer_(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const questionId = parseInt(ctx.match[1]);
+    ctx.session.awaitingCoachingAnswer = questionId;
+    await ctx.reply('💬 Напишите ваш ответ:');
+  });
+
+  // Кнопка "Пропустить" коучинг
+  bot.action('coaching_skip', async (ctx) => {
+    await ctx.answerCbQuery('⏭');
+    await ctx.editMessageText('⏭ Вопрос пропущен. Хорошего вечера!');
+  });
+
+  // Обработка текстового ответа на коучинг
+  bot.on('text', async (ctx, next) => {
+    if (ctx.message.text.startsWith('/')) return next();
+    if (!ctx.session?.awaitingCoachingAnswer) return next();
+
+    try {
+      const questionId = ctx.session.awaitingCoachingAnswer;
+      ctx.session.awaitingCoachingAnswer = null;
+
+      await saveCoachingAnswer(questionId, ctx.message.text);
+      await ctx.reply('✅ Спасибо за ответ! Рефлексия — ключ к стратегическому фокусу.');
+    } catch (error) {
+      console.error('[COACHING] Answer error:', error.message);
+      await ctx.reply('Ошибка при сохранении ответа.');
     }
   });
 }
