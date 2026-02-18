@@ -1,5 +1,5 @@
 const { findOrCreateUser } = require('../../database/queries/users');
-const { mainMenuKeyboard } = require('../../utils/keyboards');
+const { mainMenuKeyboard, persistentKeyboard } = require('../../utils/keyboards');
 const { getActiveSprint, formatSprint } = require('../../services/sprint');
 
 function registerStartHandlers(bot) {
@@ -21,6 +21,7 @@ function registerStartHandlers(bot) {
         ? '🎯 Добро пожаловать в Стратег-Ассистент!\n\nЯ помогу вам управлять стратегическими целями, планировать спринты и отслеживать прогресс.\n\nВыберите действие:'
         : '👋 С возвращением!\n\nВыберите действие:';
 
+      await ctx.reply('Клавиатура активирована:', persistentKeyboard);
       await ctx.reply(welcomeText, mainMenuKeyboard);
       console.log(`[START] User ${telegramId} - ${isNewUser ? 'new' : 'returning'}`);
     } catch (error) {

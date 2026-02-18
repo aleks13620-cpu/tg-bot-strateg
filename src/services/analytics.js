@@ -3,7 +3,7 @@ const { supabase } = require('../../config/database');
 async function getDayStats(userId, date) {
   const { data: items, error } = await supabase
     .from('plan_items')
-    .select('*')
+    .select('*, initiative:initiatives(id, title)')
     .eq('user_id', userId)
     .eq('date', date);
 
@@ -19,6 +19,15 @@ async function getDayStats(userId, date) {
   const fireDone = done.filter((i) => !i.is_strategic).length;
   const sfi = done.length > 0 ? Math.round((strategicDone / done.length) * 100) : 0;
 
+  // Группировка выполненных по инициативам
+  const byInitiative = {};
+  done.forEach((item) => {
+    if (item.initiative) {
+      const title = item.initiative.title;
+      byInitiative[title] = (byInitiative[title] || 0) + 1;
+    }
+  });
+
   return {
     total,
     done: done.length,
@@ -27,6 +36,7 @@ async function getDayStats(userId, date) {
     strategicDone,
     fireDone,
     sfi,
+    byInitiative,
   };
 }
 
@@ -75,6 +85,13 @@ function formatDayStats(stats) {
   text += `✅ Выполнено: ${stats.done}/${stats.total}\n`;
   if (stats.skipped > 0) text += `⏭ Пропущено: ${stats.skipped}\n`;
   if (stats.pending > 0) text += `⬜ Осталось: ${stats.pending}\n`;
+  // Разбивка по инициативам
+  if (stats.byInitiative && Object.keys(stats.byInitiative).length > 0) {
+    text += '\n*По инициативам:*\n';
+    for (const [title, count] of Object.entries(stats.byInitiative)) {
+      text += `  🎯 ${title}: ${count}\n`;
+    }
+  }
   text += `\n📊 По стратегии: ${stats.strategicDone}\n`;
   text += `🔥 Вне стратегии: ${stats.fireDone}\n`;
   text += `\n🎯 *SFI: ${stats.sfi}%*`;

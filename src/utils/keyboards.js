@@ -1,5 +1,10 @@
 const { Markup } = require('telegraf');
 
+// Постоянные кнопки внизу чата (reply keyboard)
+const persistentKeyboard = Markup.keyboard([
+  ['📋 Добавить задачи', '🌙 Закрыть день'],
+]).resize();
+
 const mainMenuKeyboard = Markup.inlineKeyboard([
   [Markup.button.callback('📋 Мой план на сегодня', 'action_today_plan')],
   [Markup.button.callback('🎯 Текущий спринт', 'action_current_sprint')],
@@ -13,4 +18,4 @@ function escapeMarkdown(text) {
   return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 }
 
-module.exports = { mainMenuKeyboard, escapeMarkdown };
+module.exports = { mainMenuKeyboard, persistentKeyboard, escapeMarkdown };

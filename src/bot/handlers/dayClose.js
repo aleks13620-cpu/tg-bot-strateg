@@ -5,8 +5,14 @@ const { getDayStats, formatDayStats } = require('../../services/analytics');
 const { getTodayDate } = require('../../services/planning');
 const { generateCoaching } = require('../../services/coaching/simpleCoaching');
 const { saveCoachingAnswer, getLastUnansweredQuestion } = require('../../database/queries/coaching');
+const { persistentKeyboard } = require('../../utils/keyboards');
 
 function registerDayCloseHandlers(bot) {
+  // Reply keyboard: кнопка "Закрыть день"
+  bot.hears('🌙 Закрыть день', async (ctx) => {
+    await startDayClose(ctx);
+  });
+
   // Команда /close — закрытие дня
   bot.command('close', async (ctx) => {
     await startDayClose(ctx);
@@ -54,9 +60,12 @@ function registerDayCloseHandlers(bot) {
             ]),
           });
         } else {
-          // Мотивационное сообщение — без кнопок
-          await ctx.reply(coaching.message);
+          // Мотивационное сообщение — восстанавливаем keyboard
+          await ctx.reply(coaching.message, persistentKeyboard);
         }
+      } else {
+        // Нет коучинга — восстанавливаем keyboard
+        await ctx.reply('Хорошего вечера!', persistentKeyboard);
       }
     } catch (error) {
       console.error('[DAYCLOSE] Summary error:', error.message);
@@ -75,7 +84,8 @@ function registerDayCloseHandlers(bot) {
   // Кнопка "Пропустить" коучинг
   bot.action('coaching_skip', async (ctx) => {
     await ctx.answerCbQuery('⏭');
-    await ctx.editMessageText('⏭ Вопрос пропущен. Хорошего вечера!');
+    await ctx.editMessageText('⏭ Вопрос пропущен.');
+    await ctx.reply('Хорошего вечера!', persistentKeyboard);
   });
 
   // Обработка текстового ответа на коучинг
@@ -88,7 +98,7 @@ function registerDayCloseHandlers(bot) {
       ctx.session.awaitingCoachingAnswer = null;
 
       await saveCoachingAnswer(questionId, ctx.message.text);
-      await ctx.reply('✅ Спасибо за ответ! Рефлексия — ключ к стратегическому фокусу.');
+      await ctx.reply('✅ Спасибо за ответ! Рефлексия — ключ к стратегическому фокусу.', persistentKeyboard);
     } catch (error) {
       console.error('[COACHING] Answer error:', error.message);
       await ctx.reply('Ошибка при сохранении ответа.');
@@ -132,7 +142,9 @@ async function startDayClose(ctx) {
 
     // Отправляем каждую задачу с кнопками
     for (const item of pendingItems) {
-      const strategic = item.is_strategic ? ' 📊' : ' 🔥';
+      const strategic = item.initiative
+        ? ` 🎯 ${item.initiative.title}`
+        : item.is_strategic ? ' 📊' : ' 🔥';
       await ctx.reply(
         `${item.text_raw}${strategic}`,
         Markup.inlineKeyboard([

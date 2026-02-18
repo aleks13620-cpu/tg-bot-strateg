@@ -42,7 +42,7 @@ async function createPlanItems(userId, date, texts) {
 async function getPlanItemsByDate(userId, date) {
   const { data, error } = await supabase
     .from('plan_items')
-    .select('*')
+    .select('*, initiative:initiatives(id, title)')
     .eq('user_id', userId)
     .eq('date', date)
     .order('created_at', { ascending: true });
@@ -82,10 +82,23 @@ async function getPlanItemById(itemId) {
   return { data: data || null, error: null };
 }
 
+async function deletePlanItem(itemId) {
+  const { error } = await supabase
+    .from('plan_items')
+    .delete()
+    .eq('id', itemId);
+
+  if (error) {
+    console.error('[DB] Error deleting plan item:', error.message);
+  }
+  return { error };
+}
+
 module.exports = {
   createPlanItem,
   createPlanItems,
   getPlanItemsByDate,
   updatePlanItem,
   getPlanItemById,
+  deletePlanItem,
 };
