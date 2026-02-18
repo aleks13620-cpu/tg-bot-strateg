@@ -1,11 +1,12 @@
 const { Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
-const { getPlanItemsByDate, updatePlanItem } = require('../../database/queries/planItems');
+const { getPlanItemsByDate, updatePlanItem, createPlanItemsWithDetails } = require('../../database/queries/planItems');
 const { getDayStats, formatDayStats } = require('../../services/analytics');
-const { getTodayDate } = require('../../services/planning');
+const { getTodayDate, getTomorrowDate, formatDateRu } = require('../../services/planning');
 const { generateCoaching } = require('../../services/coaching/simpleCoaching');
 const { saveCoachingAnswer, getLastUnansweredQuestion } = require('../../database/queries/coaching');
 const { persistentKeyboard, KEYBOARD_BUTTONS } = require('../../utils/keyboards');
+const { sendPlanMessages } = require('./plan');
 
 function registerDayCloseHandlers(bot) {
   // Reply keyboard: кнопка "Закрыть день"
@@ -18,7 +19,7 @@ function registerDayCloseHandlers(bot) {
     await startDayClose(ctx);
   });
 
-  // Кнопка закрытия дня (можно добавить в меню позже через напоминания)
+  // Кнопка закрытия дня
   bot.action('action_close_day', async (ctx) => {
     await ctx.answerCbQuery();
     await startDayClose(ctx);
@@ -47,29 +48,96 @@ function registerDayCloseHandlers(bot) {
       const stats = await getDayStats(user.id, date);
       await ctx.reply(formatDayStats(stats), { parse_mode: 'Markdown' });
 
-      // Коучинг после итогов дня
-      const coaching = await generateCoaching(user.id, date);
-      if (coaching) {
-        if (coaching.questionId) {
-          // Вопрос — предлагаем ответить
-          await ctx.reply(coaching.message, {
-            parse_mode: 'Markdown',
-            ...Markup.inlineKeyboard([
-              [Markup.button.callback('💬 Ответить', `coaching_answer_${coaching.questionId}`)],
-              [Markup.button.callback('⏭ Пропустить', 'coaching_skip')],
-            ]),
-          });
-        } else {
-          // Мотивационное сообщение — восстанавливаем keyboard
-          await ctx.reply(coaching.message, persistentKeyboard);
-        }
+      // Проверяем skipped задачи для переноса
+      const { data: items } = await getPlanItemsByDate(user.id, date);
+      const skippedItems = items.filter((i) => i.status === 'skipped');
+
+      if (skippedItems.length > 0) {
+        let msg = `📋 Незавершённые задачи (${skippedItems.length}):\n\n`;
+        skippedItems.forEach((item, i) => {
+          const tag = item.initiative ? ` [${item.initiative.title}]` : '';
+          msg += `${i + 1}. ${item.text_raw}${tag}\n`;
+        });
+        const tomorrow = getTomorrowDate();
+        msg += `\nПеренести на ${formatDateRu(tomorrow)}?`;
+
+        // Сохраняем в сессию
+        ctx.session.carryOverItems = skippedItems.map((item) => ({
+          id: item.id,
+          text_raw: item.text_raw,
+          initiative_id: item.initiative_id,
+          is_strategic: item.is_strategic,
+        }));
+
+        await ctx.reply(msg, Markup.inlineKeyboard([
+          [Markup.button.callback('✅ Перенести все', 'dayclose_carry_all')],
+          [Markup.button.callback('⏭ Не переносить', 'dayclose_carry_skip')],
+        ]));
       } else {
-        // Нет коучинга — восстанавливаем keyboard
-        await ctx.reply('Хорошего вечера!', persistentKeyboard);
+        await showCoaching(ctx, user.id, date);
       }
     } catch (error) {
       console.error('[DAYCLOSE] Summary error:', error.message);
       await ctx.reply('Ошибка при формировании итогов.');
+    }
+  });
+
+  // Перенести все задачи на завтра
+  bot.action('dayclose_carry_all', async (ctx) => {
+    await ctx.answerCbQuery('Переношу...');
+    try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+
+      const carryItems = ctx.session.carryOverItems || [];
+      if (carryItems.length === 0) {
+        await ctx.editMessageText('Нет задач для переноса.');
+        return;
+      }
+
+      const tomorrow = getTomorrowDate();
+
+      // Создаём копии на завтра
+      await createPlanItemsWithDetails(user.id, tomorrow, carryItems);
+
+      // Обновляем оригиналы: status → moved
+      for (const item of carryItems) {
+        await updatePlanItem(item.id, { status: 'moved' });
+      }
+
+      ctx.session.carryOverItems = null;
+
+      await ctx.editMessageText(`✅ Перенесено задач: ${carryItems.length} на ${formatDateRu(tomorrow)}`);
+
+      // Показать план на завтра
+      const { data: tomorrowItems } = await getPlanItemsByDate(user.id, tomorrow);
+      if (tomorrowItems.length > 0) {
+        await sendPlanMessages(ctx, tomorrowItems, { date: tomorrow });
+      }
+
+      // Коучинг
+      const date = getTodayDate();
+      await showCoaching(ctx, user.id, date);
+    } catch (error) {
+      console.error('[DAYCLOSE] Carry all error:', error.message);
+      await ctx.reply('Ошибка при переносе задач.');
+    }
+  });
+
+  // Не переносить задачи
+  bot.action('dayclose_carry_skip', async (ctx) => {
+    await ctx.answerCbQuery('⏭');
+    try {
+      ctx.session.carryOverItems = null;
+      await ctx.editMessageText('⏭ Задачи не перенесены.');
+
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+
+      const date = getTodayDate();
+      await showCoaching(ctx, user.id, date);
+    } catch (error) {
+      console.error('[DAYCLOSE] Carry skip error:', error.message);
     }
   });
 
@@ -110,6 +178,30 @@ function registerDayCloseHandlers(bot) {
   });
 }
 
+async function showCoaching(ctx, userId, date) {
+  try {
+    const coaching = await generateCoaching(userId, date);
+    if (coaching) {
+      if (coaching.questionId) {
+        await ctx.reply(coaching.message, {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('💬 Ответить', `coaching_answer_${coaching.questionId}`)],
+            [Markup.button.callback('⏭ Пропустить', 'coaching_skip')],
+          ]),
+        });
+      } else {
+        await ctx.reply(coaching.message, persistentKeyboard);
+      }
+    } else {
+      await ctx.reply('Хорошего вечера!', persistentKeyboard);
+    }
+  } catch (error) {
+    console.error('[COACHING] Error:', error.message);
+    await ctx.reply('Хорошего вечера!', persistentKeyboard);
+  }
+}
+
 async function startDayClose(ctx) {
   try {
     const { data: user } = await getUserByTelegramId(ctx.from.id);
@@ -144,7 +236,6 @@ async function startDayClose(ctx) {
       { parse_mode: 'Markdown' }
     );
 
-    // Отправляем каждую задачу с кнопками
     for (const item of pendingItems) {
       const strategic = item.initiative
         ? ` 🎯 ${item.initiative.title}`

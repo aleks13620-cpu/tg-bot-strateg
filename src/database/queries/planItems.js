@@ -42,7 +42,7 @@ async function createPlanItems(userId, date, texts) {
 async function getPlanItemsByDate(userId, date) {
   const { data, error } = await supabase
     .from('plan_items')
-    .select('*, initiative:initiatives(id, title)')
+    .select('*, initiative:initiatives(id, title, sprint_id, sprint:sprints(id, goal_text))')
     .eq('user_id', userId)
     .eq('date', date)
     .order('created_at', { ascending: true });
@@ -94,9 +94,31 @@ async function deletePlanItem(itemId) {
   return { error };
 }
 
+async function createPlanItemsWithDetails(userId, date, items) {
+  const rows = items.map((item) => ({
+    user_id: userId,
+    date: date,
+    text_raw: item.text_raw,
+    status: 'pending',
+    is_strategic: item.is_strategic || false,
+    initiative_id: item.initiative_id || null,
+  }));
+
+  const { data, error } = await supabase
+    .from('plan_items')
+    .insert(rows)
+    .select();
+
+  if (error) {
+    console.error('[DB] Error creating plan items with details:', error.message);
+  }
+  return { data: data || [], error };
+}
+
 module.exports = {
   createPlanItem,
   createPlanItems,
+  createPlanItemsWithDetails,
   getPlanItemsByDate,
   updatePlanItem,
   getPlanItemById,

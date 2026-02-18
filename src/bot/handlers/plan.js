@@ -1,7 +1,7 @@
 const { Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
 const { getActiveSprint } = require('../../database/queries/sprints');
-const { addDayPlan, getTodayPlan, formatPlanItems } = require('../../services/planning');
+const { addDayPlan, getTodayPlan, formatPlanMessages, getTodayDate } = require('../../services/planning');
 const { escapeMarkdown, persistentKeyboard, KEYBOARD_BUTTONS } = require('../../utils/keyboards');
 
 function registerPlanHandlers(bot) {
@@ -25,9 +25,8 @@ function registerPlanHandlers(bot) {
           { parse_mode: 'Markdown' }
         );
       } else {
-        await ctx.reply(
-          formatPlanItems(items) + '\n\n📝 Напишите новые задачи — каждая с новой строки или через запятую:'
-        );
+        await sendPlanMessages(ctx, items);
+        await ctx.reply('📝 Напишите новые задачи — каждая с новой строки или через запятую:');
       }
       ctx.session.awaitingPlanInput = true;
     } catch (error) {
@@ -61,10 +60,12 @@ function registerPlanHandlers(bot) {
         return;
       }
 
-      await ctx.reply(formatPlanItems(items), Markup.inlineKeyboard([
-        [Markup.button.callback('➕ Добавить задачи', 'action_add_tasks')],
-        [Markup.button.callback('✏️ Редактировать задачи', 'action_edit_tasks')],
-      ]));
+      await sendPlanMessages(ctx, items, {
+        buttons: Markup.inlineKeyboard([
+          [Markup.button.callback('➕ Добавить задачи', 'action_add_tasks')],
+          [Markup.button.callback('✏️ Редактировать задачи', 'action_edit_tasks')],
+        ]),
+      });
     } catch (error) {
       console.error('[PLAN] Error:', error.message);
       await ctx.reply('Ошибка при загрузке плана.');
@@ -94,10 +95,12 @@ function registerPlanHandlers(bot) {
         return;
       }
 
-      await ctx.reply(formatPlanItems(items), Markup.inlineKeyboard([
-        [Markup.button.callback('➕ Добавить задачи', 'action_add_tasks')],
-        [Markup.button.callback('✏️ Редактировать задачи', 'action_edit_tasks')],
-      ]));
+      await sendPlanMessages(ctx, items, {
+        buttons: Markup.inlineKeyboard([
+          [Markup.button.callback('➕ Добавить задачи', 'action_add_tasks')],
+          [Markup.button.callback('✏️ Редактировать задачи', 'action_edit_tasks')],
+        ]),
+      });
     } catch (error) {
       console.error('[PLAN] Error:', error.message);
       await ctx.reply('Ошибка при загрузке плана.');
@@ -325,6 +328,28 @@ function registerPlanHandlers(bot) {
   });
 }
 
+// Отправка плана несколькими сообщениями (по одному на спринт)
+async function sendPlanMessages(ctx, items, { buttons, date } = {}) {
+  const d = date || getTodayDate();
+  const messages = formatPlanMessages(items, d);
+
+  if (messages.length === 0) {
+    await ctx.reply('📋 На сегодня задач нет.\n\nНажмите "📋 Добавить задачи" чтобы добавить.');
+    return;
+  }
+
+  for (let i = 0; i < messages.length - 1; i++) {
+    await ctx.reply(messages[i]);
+  }
+
+  const lastMsg = messages[messages.length - 1];
+  if (buttons) {
+    await ctx.reply(lastMsg, buttons);
+  } else {
+    await ctx.reply(lastMsg);
+  }
+}
+
 async function getSprintContext(userId) {
   const { data: sprint } = await getActiveSprint(userId);
   if (!sprint) {
@@ -373,10 +398,8 @@ async function finishQualification(ctx) {
 
   const { data: user } = await getUserByTelegramId(ctx.from.id);
   const { data: updatedItems } = await getTodayPlan(user.id);
-  await ctx.reply(
-    '✅ Квалификация завершена!\n\n' + formatPlanItems(updatedItems),
-    persistentKeyboard
-  );
+  await ctx.reply('✅ Квалификация завершена!');
+  await sendPlanMessages(ctx, updatedItems, { buttons: persistentKeyboard });
 }
 
-module.exports = { registerPlanHandlers };
+module.exports = { registerPlanHandlers, sendPlanMessages };
