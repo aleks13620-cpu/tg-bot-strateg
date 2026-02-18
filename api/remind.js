@@ -14,13 +14,22 @@ module.exports = async (req, res) => {
   try {
     const users = await getAllActiveUsers();
     const type = req.query.type || getReminderType();
-    const message = type === 'morning' ? getMorningMessage() : getEveningMessage();
 
     let sent = 0;
+    let skipped = 0;
     let failed = 0;
 
     for (const user of users) {
       try {
+        const message = type === 'morning'
+          ? await getMorningMessage(user.id)
+          : await getEveningMessage(user.id);
+
+        if (!message) {
+          skipped++;
+          continue;
+        }
+
         await bot.telegram.sendMessage(
           user.telegram_id,
           message.text,
@@ -28,13 +37,13 @@ module.exports = async (req, res) => {
         );
         sent++;
       } catch (err) {
-        console.error(`[REMIND] Failed to send to ${user.telegram_id}:`, err.message);
+        console.error(`[REMIND] Failed for user ${user.telegram_id}:`, err.message);
         failed++;
       }
     }
 
-    console.log(`[REMIND] Sent: ${sent}, Failed: ${failed}`);
-    res.status(200).json({ ok: true, sent, failed, type });
+    console.log(`[REMIND] Sent: ${sent}, Skipped: ${skipped}, Failed: ${failed}`);
+    res.status(200).json({ ok: true, sent, skipped, failed, type });
   } catch (error) {
     console.error('[REMIND] Error:', error.message);
     res.status(500).json({ error: error.message });

@@ -40,6 +40,17 @@ function registerStartHandlers(bot) {
     }
   });
 
+  // Reply keyboard: кнопка "🏠 Меню"
+  bot.hears('🏠 Меню', async (ctx) => {
+    try {
+      console.log(`[MENU] User ${ctx.from.id} requested menu via keyboard`);
+      await ctx.reply('Главное меню:', mainMenuKeyboard);
+    } catch (error) {
+      console.error('[MENU] Error:', error.message);
+      await ctx.reply('Не удалось показать меню. Попробуйте /menu ещё раз.');
+    }
+  });
+
   // action_today_plan обрабатывается в handlers/plan.js
 
   bot.action('action_current_sprint', async (ctx) => {

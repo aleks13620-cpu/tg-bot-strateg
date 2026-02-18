@@ -37,6 +37,22 @@ async function getActiveSprint(userId) {
   return { data: data || null, error: null };
 }
 
+async function getActiveSprints(userId) {
+  const { data, error } = await supabase
+    .from('sprints')
+    .select('*, initiatives(*)')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[DB] Error getting active sprints:', error.message);
+    return { data: [], error };
+  }
+
+  return { data: data || [], error: null };
+}
+
 async function completeSprint(sprintId) {
   const { data, error } = await supabase
     .from('sprints')
@@ -51,4 +67,4 @@ async function completeSprint(sprintId) {
   return { data, error };
 }
 
-module.exports = { createSprint, getActiveSprint, completeSprint };
+module.exports = { createSprint, getActiveSprint, getActiveSprints, completeSprint };

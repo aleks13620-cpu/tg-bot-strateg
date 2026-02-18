@@ -48,4 +48,17 @@ function formatSprint(sprint) {
   return text;
 }
 
-module.exports = { startNewSprint, getActiveSprint, formatSprint };
+function formatSprintCompact(sprint, index, total) {
+  const start = new Date(sprint.start_date).toLocaleDateString('ru-RU');
+  const end = new Date(sprint.end_date).toLocaleDateString('ru-RU');
+  const initiativeCount = (sprint.initiatives || []).length;
+
+  let text = `🎯 *Спринт ${index + 1}/${total}*\n`;
+  text += `*Цель:* ${sprint.goal_text}\n`;
+  text += `📅 ${start} — ${end}\n`;
+  text += `📌 Инициатив: ${initiativeCount}`;
+
+  return text;
+}
+
+module.exports = { startNewSprint, getActiveSprint, formatSprint, formatSprintCompact };

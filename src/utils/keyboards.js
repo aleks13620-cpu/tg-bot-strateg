@@ -3,6 +3,7 @@ const { Markup } = require('telegraf');
 // Постоянные кнопки внизу чата (reply keyboard)
 const persistentKeyboard = Markup.keyboard([
   ['📋 Добавить задачи', '🌙 Закрыть день'],
+  ['🎯 Спринты', '🏠 Меню'],
 ]).resize();
 
 const mainMenuKeyboard = Markup.inlineKeyboard([
