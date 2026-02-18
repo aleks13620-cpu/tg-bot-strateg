@@ -67,4 +67,18 @@ async function completeSprint(sprintId) {
   return { data, error };
 }
 
-module.exports = { createSprint, getActiveSprint, getActiveSprints, completeSprint };
+async function updateSprintGoal(sprintId, goalText) {
+  const { data, error } = await supabase
+    .from('sprints')
+    .update({ goal_text: goalText })
+    .eq('id', sprintId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[DB] Error updating sprint goal:', error.message);
+  }
+  return { data, error };
+}
+
+module.exports = { createSprint, getActiveSprint, getActiveSprints, completeSprint, updateSprintGoal };

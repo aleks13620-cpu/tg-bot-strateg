@@ -2,7 +2,7 @@ const { Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
 const { getActiveSprint } = require('../../database/queries/sprints');
 const { addDayPlan, getTodayPlan, formatPlanItems } = require('../../services/planning');
-const { escapeMarkdown, persistentKeyboard } = require('../../utils/keyboards');
+const { escapeMarkdown, persistentKeyboard, KEYBOARD_BUTTONS } = require('../../utils/keyboards');
 
 function registerPlanHandlers(bot) {
   // Reply keyboard: кнопка "Добавить задачи"
@@ -117,6 +117,10 @@ function registerPlanHandlers(bot) {
   // Обработка текстового ввода задач
   bot.on('text', async (ctx, next) => {
     if (ctx.message.text.startsWith('/')) return next();
+    if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
+      ctx.session.awaitingPlanInput = false;
+      return next();
+    }
     if (!ctx.session?.awaitingPlanInput) return next();
 
     try {

@@ -5,7 +5,7 @@ const { getDayStats, formatDayStats } = require('../../services/analytics');
 const { getTodayDate } = require('../../services/planning');
 const { generateCoaching } = require('../../services/coaching/simpleCoaching');
 const { saveCoachingAnswer, getLastUnansweredQuestion } = require('../../database/queries/coaching');
-const { persistentKeyboard } = require('../../utils/keyboards');
+const { persistentKeyboard, KEYBOARD_BUTTONS } = require('../../utils/keyboards');
 
 function registerDayCloseHandlers(bot) {
   // Reply keyboard: кнопка "Закрыть день"
@@ -91,6 +91,10 @@ function registerDayCloseHandlers(bot) {
   // Обработка текстового ответа на коучинг
   bot.on('text', async (ctx, next) => {
     if (ctx.message.text.startsWith('/')) return next();
+    if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
+      ctx.session.awaitingCoachingAnswer = null;
+      return next();
+    }
     if (!ctx.session?.awaitingCoachingAnswer) return next();
 
     try {

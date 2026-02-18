@@ -1,9 +1,12 @@
 const { Markup } = require('telegraf');
 
+// Тексты кнопок persistent keyboard (для фильтрации в text-обработчиках)
+const KEYBOARD_BUTTONS = ['📋 Добавить задачи', '🌙 Закрыть день', '🎯 Спринты', '🏠 Меню'];
+
 // Постоянные кнопки внизу чата (reply keyboard)
 const persistentKeyboard = Markup.keyboard([
-  ['📋 Добавить задачи', '🌙 Закрыть день'],
-  ['🎯 Спринты', '🏠 Меню'],
+  [KEYBOARD_BUTTONS[0], KEYBOARD_BUTTONS[1]],
+  [KEYBOARD_BUTTONS[2], KEYBOARD_BUTTONS[3]],
 ]).resize();
 
 const mainMenuKeyboard = Markup.inlineKeyboard([
@@ -19,4 +22,4 @@ function escapeMarkdown(text) {
   return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 }
 
-module.exports = { mainMenuKeyboard, persistentKeyboard, escapeMarkdown };
+module.exports = { mainMenuKeyboard, persistentKeyboard, escapeMarkdown, KEYBOARD_BUTTONS };

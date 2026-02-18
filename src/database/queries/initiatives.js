@@ -31,4 +31,30 @@ async function getInitiativesBySprint(sprintId) {
   return { data: data || [], error: null };
 }
 
-module.exports = { createInitiative, getInitiativesBySprint };
+async function updateInitiativeTitle(initiativeId, title) {
+  const { data, error } = await supabase
+    .from('initiatives')
+    .update({ title })
+    .eq('id', initiativeId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[DB] Error updating initiative:', error.message);
+  }
+  return { data, error };
+}
+
+async function deleteInitiative(initiativeId) {
+  const { error } = await supabase
+    .from('initiatives')
+    .delete()
+    .eq('id', initiativeId);
+
+  if (error) {
+    console.error('[DB] Error deleting initiative:', error.message);
+  }
+  return { error };
+}
+
+module.exports = { createInitiative, getInitiativesBySprint, updateInitiativeTitle, deleteInitiative };

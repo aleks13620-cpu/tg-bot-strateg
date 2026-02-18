@@ -1,6 +1,7 @@
 const { Scenes, Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
 const { startNewSprint } = require('../../services/sprint');
+const { KEYBOARD_BUTTONS } = require('../../utils/keyboards');
 
 const onboardingScene = new Scenes.WizardScene(
   'onboarding',
@@ -23,6 +24,11 @@ const onboardingScene = new Scenes.WizardScene(
     if (!ctx.message?.text) {
       await ctx.reply('Пожалуйста, напишите цель текстом.');
       return;
+    }
+
+    if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
+      await ctx.reply('❌ Создание спринта отменено.');
+      return ctx.scene.leave();
     }
 
     ctx.wizard.state.goal = ctx.message.text.trim();
@@ -57,6 +63,11 @@ const onboardingScene = new Scenes.WizardScene(
     if (!ctx.message?.text) {
       await ctx.reply('Пожалуйста, напишите инициативу текстом.');
       return;
+    }
+
+    if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
+      await ctx.reply('❌ Создание спринта отменено.');
+      return ctx.scene.leave();
     }
 
     const initiative = ctx.message.text.trim();

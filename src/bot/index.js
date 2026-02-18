@@ -26,10 +26,10 @@ const stage = new Scenes.Stage([onboardingScene]);
 bot.use(session());
 bot.use(stage.middleware());
 
-// Handlers
+// Handlers (порядок важен: sprints text handler должен быть до plan text handler)
 registerStartHandlers(bot);
-registerPlanHandlers(bot);
 registerSprintsHandlers(bot);
+registerPlanHandlers(bot);
 registerDayCloseHandlers(bot);
 registerProgressHandlers(bot);
 registerUploadHandlers(bot);
