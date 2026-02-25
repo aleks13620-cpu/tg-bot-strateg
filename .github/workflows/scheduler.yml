@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       type:
-        description: 'Reminder type (morning/evening)'
+        description: 'Reminder type: morning or evening'
         required: true
         default: 'morning'
 
@@ -17,9 +17,18 @@ jobs:
   send-reminder:
     runs-on: ubuntu-latest
     steps:
+      - name: Determine reminder type
+        id: type
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "TYPE=${{ github.event.inputs.type }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" = "0 6 * * *" ]; then
+            echo "TYPE=morning" >> $GITHUB_OUTPUT
+          else
+            echo "TYPE=evening" >> $GITHUB_OUTPUT
+          fi
+
       - name: Send reminder
         run: |
-          TYPE="${{ github.event.inputs.type || (github.event.schedule == '0 6 * * *' && 'morning' || 'evening') }}"
-          curl -s -X POST \
-            "${{ secrets.VERCEL_URL }}/api/remind?type=${TYPE}&secret=${{ secrets.WEBHOOK_SECRET }}" \
-            -H "x-webhook-secret: ${{ secrets.WEBHOOK_SECRET }}"
+          curl -sf \
+            "https://tg-bot-strateg-1ukh.vercel.app/api/remind?type=${{ steps.type.outputs.TYPE }}&secret=${{ secrets.WEBHOOK_SECRET }}"
