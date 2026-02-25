@@ -71,7 +71,8 @@ async function getEveningMessage(userId) {
 }
 
 function getReminderType() {
-  const hour = new Date().getHours();
+  const nowMoscow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Moscow' }));
+  const hour = nowMoscow.getHours();
   if (hour < 12) return 'morning';
   return 'evening';
 }

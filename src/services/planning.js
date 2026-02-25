@@ -89,16 +89,23 @@ function formatPlanItems(items) {
 }
 
 // Новый формат: массив сообщений, сгруппированных по спринтам
-function formatPlanMessages(items, date) {
-  if (items.length === 0) {
-    return [];
-  }
-
+function formatPlanMessages(items, date, sprints) {
   const dateStr = formatDateRu(date);
   const messages = [];
 
   // Группировка: sprint_id → { goal, initiatives: { init_id → { title, items } } }
+  // Предзаполняем из sprints, чтобы пустые спринты тоже отображались
   const sprintGroups = {};
+  if (sprints && sprints.length > 0) {
+    for (const s of sprints) {
+      sprintGroups[s.id] = { goal: s.goal_text, initiatives: {} };
+    }
+  }
+
+  if (items.length === 0 && Object.keys(sprintGroups).length === 0) {
+    return [];
+  }
+
   const fireItems = [];
 
   items.forEach((item) => {
@@ -133,13 +140,18 @@ function formatPlanMessages(items, date) {
     let msg = `📋 План на ${dateStr}\n\n`;
     msg += `🎯 Спринт: ${group.goal}\n`;
 
-    for (const initId of Object.keys(group.initiatives)) {
-      const init = group.initiatives[initId];
-      msg += `\n  📌 ${init.title}:\n`;
-      for (const item of init.items) {
-        const icon = getStatusIcon(item);
-        msg += `    ${taskNum}. ${icon} ${item.text_raw}\n`;
-        taskNum++;
+    const initKeys = Object.keys(group.initiatives);
+    if (initKeys.length === 0) {
+      msg += `\n  _(нет задач)_`;
+    } else {
+      for (const initId of initKeys) {
+        const init = group.initiatives[initId];
+        msg += `\n  📌 ${init.title}:\n`;
+        for (const item of init.items) {
+          const icon = getStatusIcon(item);
+          msg += `    ${taskNum}. ${icon} ${item.text_raw}\n`;
+          taskNum++;
+        }
       }
     }
 

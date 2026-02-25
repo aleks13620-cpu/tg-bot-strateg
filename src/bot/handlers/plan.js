@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
-const { getActiveSprint } = require('../../database/queries/sprints');
+const { getActiveSprint, getActiveSprints } = require('../../database/queries/sprints');
 const { addDayPlan, getTodayPlan, formatPlanMessages, getTodayDate } = require('../../services/planning');
 const { escapeMarkdown, persistentKeyboard, KEYBOARD_BUTTONS } = require('../../utils/keyboards');
 
@@ -329,9 +329,21 @@ function registerPlanHandlers(bot) {
 }
 
 // Отправка плана несколькими сообщениями (по одному на спринт)
-async function sendPlanMessages(ctx, items, { buttons, date } = {}) {
+async function sendPlanMessages(ctx, items, { buttons, date, sprints } = {}) {
   const d = date || getTodayDate();
-  const messages = formatPlanMessages(items, d);
+  let activeSprints = sprints;
+  if (!activeSprints) {
+    try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (user) {
+        const { data } = await getActiveSprints(user.id);
+        activeSprints = data || [];
+      }
+    } catch (e) {
+      activeSprints = [];
+    }
+  }
+  const messages = formatPlanMessages(items, d, activeSprints);
 
   if (messages.length === 0) {
     await ctx.reply('📋 На сегодня задач нет.\n\nНажмите "📋 Добавить задачи" чтобы добавить.');
