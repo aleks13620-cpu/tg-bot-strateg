@@ -51,12 +51,20 @@ function formatSprint(sprint) {
 function formatSprintCompact(sprint, index, total) {
   const start = new Date(sprint.start_date).toLocaleDateString('ru-RU');
   const end = new Date(sprint.end_date).toLocaleDateString('ru-RU');
-  const initiativeCount = (sprint.initiatives || []).length;
+  const initiatives = sprint.initiatives || [];
 
   let text = `🎯 *Спринт ${index + 1}/${total}*\n`;
   text += `*Цель:* ${sprint.goal_text}\n`;
   text += `📅 ${start} — ${end}\n`;
-  text += `📌 Инициатив: ${initiativeCount}`;
+
+  if (initiatives.length > 0) {
+    text += `📌 *Инициативы:*\n`;
+    initiatives.forEach((init, i) => {
+      text += `  ${i + 1}. ${init.title}\n`;
+    });
+  } else {
+    text += `📌 _Инициативы не добавлены_`;
+  }
 
   return text;
 }
