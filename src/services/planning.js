@@ -1,5 +1,48 @@
 const { createPlanItems, getPlanItemsByDate } = require('../database/queries/planItems');
 
+// Разбирает текстовый ввод в массив строк-задач
+function parseTaskLines(rawText) {
+  if (rawText.includes('\n')) {
+    return rawText
+      .split('\n')
+      .map((line) => line.replace(/^[\d\.\-\*\)\s]+/, '').trim())
+      .filter((line) => line.length > 0);
+  }
+  if (rawText.includes(',')) {
+    return rawText
+      .split(',')
+      .map((part) => part.replace(/^[\d\.\-\*\)\s]+/, '').trim())
+      .filter((part) => part.length > 0);
+  }
+  const cleaned = rawText.replace(/^[\d\.\-\*\)\s]+/, '').trim();
+  return cleaned.length > 0 ? [cleaned] : [];
+}
+
+// Парсит дату из строки ДД.ММ или ДД.ММ.ГГГГ, возвращает ISO строку или null
+function parseDateInput(input) {
+  const parts = input.trim().split('.');
+  if (parts.length < 2) return null;
+
+  const day = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const year = parts.length >= 3 ? parseInt(parts[2], 10) : new Date().getFullYear();
+
+  if (isNaN(day) || isNaN(month) || day < 1 || day > 31 || month < 1 || month > 12) return null;
+
+  const date = new Date(year, month - 1, day);
+  if (date.getDate() !== day || date.getMonth() !== month - 1) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (date < today) return null;
+
+  const maxDate = new Date(today);
+  maxDate.setDate(today.getDate() + 365);
+  if (date > maxDate) return null;
+
+  return date.toISOString().split('T')[0];
+}
+
 function getTodayDate() {
   return new Date().toISOString().split('T')[0];
 }
@@ -16,32 +59,14 @@ function formatDateRu(dateStr) {
 }
 
 async function addDayPlan(userId, rawText) {
-  const hasNewlines = rawText.includes('\n');
-  let lines;
+  return addDayPlanForDate(userId, rawText, getTodayDate());
+}
 
-  if (hasNewlines) {
-    // Разделение по строкам (как раньше)
-    lines = rawText
-      .split('\n')
-      .map((line) => line.replace(/^[\d\.\-\*\)\s]+/, '').trim())
-      .filter((line) => line.length > 0);
-  } else if (rawText.includes(',')) {
-    // Одна строка с запятыми — разделяем по запятым
-    lines = rawText
-      .split(',')
-      .map((part) => part.replace(/^[\d\.\-\*\)\s]+/, '').trim())
-      .filter((part) => part.length > 0);
-  } else {
-    // Одна задача
-    const cleaned = rawText.replace(/^[\d\.\-\*\)\s]+/, '').trim();
-    lines = cleaned.length > 0 ? [cleaned] : [];
-  }
-
+async function addDayPlanForDate(userId, rawText, date) {
+  const lines = parseTaskLines(rawText);
   if (lines.length === 0) {
     return { data: [], error: { message: 'Нет задач для добавления' } };
   }
-
-  const date = getTodayDate();
   return await createPlanItems(userId, date, lines);
 }
 
@@ -184,4 +209,19 @@ function getStatusIcon(item) {
   return '⬜';
 }
 
-module.exports = { addDayPlan, getTodayPlan, formatPlanItems, formatPlanMessages, getTodayDate, getTomorrowDate, formatDateRu };
+async function getPlanForDate(userId, date) {
+  return await getPlanItemsByDate(userId, date);
+}
+
+module.exports = {
+  addDayPlan,
+  addDayPlanForDate,
+  parseDateInput,
+  getTodayPlan,
+  getPlanForDate,
+  formatPlanItems,
+  formatPlanMessages,
+  getTodayDate,
+  getTomorrowDate,
+  formatDateRu,
+};

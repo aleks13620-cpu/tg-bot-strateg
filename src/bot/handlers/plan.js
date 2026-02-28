@@ -1,11 +1,11 @@
 const { Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
-const { getActiveSprint, getActiveSprints } = require('../../database/queries/sprints');
-const { addDayPlan, getTodayPlan, formatPlanMessages, getTodayDate } = require('../../services/planning');
-const { escapeMarkdown, persistentKeyboard, KEYBOARD_BUTTONS } = require('../../utils/keyboards');
+const { getActiveSprints } = require('../../database/queries/sprints');
+const { addDayPlanForDate, getTodayPlan, getPlanForDate, formatPlanMessages, getTodayDate, parseDateInput, formatDateRu } = require('../../services/planning');
+const { escapeMarkdown, persistentKeyboard, KEYBOARD_BUTTONS, buildDatePickerKeyboard } = require('../../utils/keyboards');
 
 function registerPlanHandlers(bot) {
-  // Reply keyboard: кнопка "Добавить задачи"
+  // Reply keyboard: кнопка "Добавить задачи" — показываем дейтпикер
   bot.hears('📋 Добавить задачи', async (ctx) => {
     try {
       const { data: user } = await getUserByTelegramId(ctx.from.id);
@@ -13,22 +13,11 @@ function registerPlanHandlers(bot) {
         await ctx.reply('Профиль не найден. Используйте /start.');
         return;
       }
-
-      const { data: items } = await getTodayPlan(user.id);
-
-      if (items.length === 0) {
-        const sprintContext = await getSprintContext(user.id);
-        await ctx.reply(
-          sprintContext +
-          '📋 У вас пока нет плана на сегодня.\n\n' +
-          'Напишите список задач — каждая с новой строки или через запятую:',
-          { parse_mode: 'Markdown' }
-        );
-      } else {
-        await sendPlanMessages(ctx, items);
-        await ctx.reply('📝 Напишите новые задачи — каждая с новой строки или через запятую:');
-      }
-      ctx.session.awaitingPlanInput = true;
+      const sprintContext = await getSprintContext(user.id);
+      await ctx.reply(
+        sprintContext + '📅 На какую дату добавить задачи?',
+        { parse_mode: 'Markdown', ...buildDatePickerKeyboard(14) }
+      );
     } catch (error) {
       console.error('[PLAN] Error from reply keyboard:', error.message);
       await ctx.reply('Ошибка при загрузке плана.');
@@ -106,14 +95,59 @@ function registerPlanHandlers(bot) {
     }
   });
 
-  // Кнопка "Добавить задачи" к существующему плану
+  // Кнопка "Добавить задачи" к существующему плану — показываем дейтпикер
   bot.action('action_add_tasks', async (ctx) => {
     await ctx.answerCbQuery();
-    await ctx.reply(
-      '📝 Напишите новые задачи — каждая с новой строки или через запятую:',
-      { parse_mode: 'Markdown' }
-    );
+    await ctx.reply('📅 На какую дату добавить задачи?', buildDatePickerKeyboard(14));
+  });
+
+  // Выбор даты из дейтпикера (для добавления задач и пересланных сообщений)
+  bot.action(/^pick_date_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const dateParam = ctx.match[1];
+
+    if (dateParam === 'manual') {
+      ctx.session.awaitingDateInput = true;
+      await ctx.reply('Введите дату в формате ДД.ММ (например, 15.03):');
+      return;
+    }
+
+    // dateParam = 'YYYY-MM-DD'
+    ctx.session.selectedDate = dateParam;
+    const dateLabel = formatDateRu(dateParam);
+
+    // Если есть ожидающее пересланное сообщение — создаём задачу
+    if (ctx.session.pendingForwardText) {
+      const text = ctx.session.pendingForwardText;
+      ctx.session.pendingForwardText = null;
+
+      try {
+        const { data: user } = await getUserByTelegramId(ctx.from.id);
+        const { createPlanItems } = require('../../database/queries/planItems');
+        const { data: items, error } = await createPlanItems(user.id, dateParam, [text]);
+        if (error || !items || items.length === 0) {
+          await ctx.reply('Ошибка при добавлении задачи.');
+          return;
+        }
+        const { data: sprints } = await getActiveSprints(user.id);
+        ctx.session.qualificationItems = items;
+        ctx.session.qualificationIndex = 0;
+        ctx.session.qualificationSprints = sprints;
+        ctx.session.qualificationSelectedSprint = null;
+        ctx.session.qualificationInitiatives = [];
+        ctx.session.qualificationDate = dateParam;
+        await ctx.reply(`✅ Задача на ${dateLabel}:\n"${text}"\n\nКвалифицируем:`);
+        await startQualificationForItem(ctx, items[0], sprints);
+      } catch (error) {
+        console.error('[PLAN] Forward date pick error:', error.message);
+        await ctx.reply('Ошибка при добавлении задачи.');
+      }
+      return;
+    }
+
+    // Обычное добавление задач
     ctx.session.awaitingPlanInput = true;
+    await ctx.reply(`📝 Напишите задачи на ${dateLabel} — каждая с новой строки или через запятую:`);
   });
 
   // Обработчик пересланных сообщений (должен быть ДО bot.on('text'))
@@ -135,37 +169,74 @@ function registerPlanHandlers(bot) {
         return;
       }
 
-      const { createPlanItems } = require('../../database/queries/planItems');
-      const { data: items, error } = await createPlanItems(user.id, getTodayDate(), [text]);
-      if (error || !items || items.length === 0) {
-        await ctx.reply('Ошибка при добавлении задачи.');
-        return;
-      }
-
-      console.log(`[PLAN] User ${user.id} added forwarded task: "${text}"`);
-
-      const { data: sprints } = await getActiveSprints(user.id);
-      ctx.session.qualificationItems = items;
-      ctx.session.qualificationIndex = 0;
-      ctx.session.qualificationSprints = sprints;
-      ctx.session.qualificationSelectedSprint = null;
-      ctx.session.qualificationInitiatives = [];
-
-      await ctx.reply(`✅ Задача из пересланного сообщения:\n"${text}"\n\nКвалифицируем:`);
-      await startQualificationForItem(ctx, items[0], sprints);
+      // Сохраняем текст и показываем дейтпикер
+      ctx.session.pendingForwardText = text;
+      const preview = text.length > 100 ? text.slice(0, 100) + '…' : text;
+      await ctx.reply(
+        `📌 Добавить как задачу:\n"${preview}"\n\n📅 На какую дату?`,
+        buildDatePickerKeyboard(14)
+      );
     } catch (error) {
       console.error('[PLAN] Forwarded message error:', error.message);
       await ctx.reply('Ошибка при обработке пересланного сообщения.');
     }
   });
 
-  // Обработка текстового ввода задач
+  // Обработка текстового ввода: ввод даты вручную или список задач
   bot.on('text', async (ctx, next) => {
     if (ctx.message.text.startsWith('/')) return next();
     if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
       ctx.session.awaitingPlanInput = false;
+      ctx.session.awaitingDateInput = false;
+      ctx.session.pendingForwardText = null;
       return next();
     }
+
+    // Ввод даты вручную
+    if (ctx.session?.awaitingDateInput) {
+      ctx.session.awaitingDateInput = false;
+      const iso = parseDateInput(ctx.message.text);
+      if (!iso) {
+        await ctx.reply('Неверная дата или она в прошлом. Введите в формате ДД.ММ (например, 15.03):');
+        ctx.session.awaitingDateInput = true;
+        return;
+      }
+      ctx.session.selectedDate = iso;
+      const dateLabel = formatDateRu(iso);
+
+      // Если есть ожидающее пересланное сообщение
+      if (ctx.session.pendingForwardText) {
+        const text = ctx.session.pendingForwardText;
+        ctx.session.pendingForwardText = null;
+        try {
+          const { data: user } = await getUserByTelegramId(ctx.from.id);
+          const { createPlanItems } = require('../../database/queries/planItems');
+          const { data: items, error } = await createPlanItems(user.id, iso, [text]);
+          if (error || !items || items.length === 0) {
+            await ctx.reply('Ошибка при добавлении задачи.');
+            return;
+          }
+          const { data: sprints } = await getActiveSprints(user.id);
+          ctx.session.qualificationItems = items;
+          ctx.session.qualificationIndex = 0;
+          ctx.session.qualificationSprints = sprints;
+          ctx.session.qualificationSelectedSprint = null;
+          ctx.session.qualificationInitiatives = [];
+          ctx.session.qualificationDate = iso;
+          await ctx.reply(`✅ Задача на ${dateLabel}:\n"${text}"\n\nКвалифицируем:`);
+          await startQualificationForItem(ctx, items[0], sprints);
+        } catch (err) {
+          console.error('[PLAN] Forward manual date error:', err.message);
+          await ctx.reply('Ошибка при добавлении задачи.');
+        }
+        return;
+      }
+
+      ctx.session.awaitingPlanInput = true;
+      await ctx.reply(`📝 Напишите задачи на ${dateLabel} — каждая с новой строки или через запятую:`);
+      return;
+    }
+
     if (!ctx.session?.awaitingPlanInput) return next();
 
     try {
@@ -176,26 +247,27 @@ function registerPlanHandlers(bot) {
       }
 
       ctx.session.awaitingPlanInput = false;
+      const date = ctx.session.selectedDate || getTodayDate();
+      ctx.session.qualificationDate = date;
+      ctx.session.selectedDate = null;
 
-      const { data: items, error } = await addDayPlan(user.id, ctx.message.text);
+      const { data: items, error } = await addDayPlanForDate(user.id, ctx.message.text, date);
 
       if (error) {
         await ctx.reply('Ошибка: ' + error.message);
         return;
       }
 
-      console.log(`[PLAN] User ${user.id} added ${items.length} tasks`);
+      console.log(`[PLAN] User ${user.id} added ${items.length} tasks for ${date}`);
 
-      // Загружаем ВСЕ активные спринты для квалификации
       const { data: sprints } = await getActiveSprints(user.id);
-
       ctx.session.qualificationItems = items;
       ctx.session.qualificationIndex = 0;
       ctx.session.qualificationSprints = sprints;
       ctx.session.qualificationSelectedSprint = null;
       ctx.session.qualificationInitiatives = [];
 
-      await ctx.reply(`✅ Добавлено задач: ${items.length}\n\nТеперь квалифицируем каждую задачу:`);
+      await ctx.reply(`✅ Добавлено задач: ${items.length} на ${formatDateRu(date)}\n\nТеперь квалифицируем каждую задачу:`);
       await startQualificationForItem(ctx, items[0], sprints);
     } catch (error) {
       console.error('[PLAN] Error adding tasks:', error.message);
@@ -600,17 +672,20 @@ async function startQualificationForItem(ctx, item, sprints) {
 }
 
 async function finishQualification(ctx) {
+  const date = ctx.session.qualificationDate || getTodayDate();
+
   ctx.session.qualificationItems = null;
   ctx.session.qualificationIndex = null;
   ctx.session.qualificationInitiatives = null;
   ctx.session.qualificationSprints = null;
   ctx.session.qualificationSelectedSprint = null;
+  ctx.session.qualificationDate = null;
   ctx.session.requalifySprints = null;
 
   const { data: user } = await getUserByTelegramId(ctx.from.id);
-  const { data: updatedItems } = await getTodayPlan(user.id);
+  const { data: updatedItems } = await getPlanForDate(user.id, date);
   await ctx.reply('✅ Квалификация завершена!');
-  await sendPlanMessages(ctx, updatedItems, { buttons: persistentKeyboard });
+  await sendPlanMessages(ctx, updatedItems, { buttons: persistentKeyboard, date });
 }
 
 module.exports = { registerPlanHandlers, sendPlanMessages };

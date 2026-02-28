@@ -115,11 +115,29 @@ async function createPlanItemsWithDetails(userId, date, items) {
   return { data: data || [], error };
 }
 
+async function getPlanItemsByDateRange(userId, startDate, endDate) {
+  const { data, error } = await supabase
+    .from('plan_items')
+    .select('*, initiative:initiatives(id, title)')
+    .eq('user_id', userId)
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .order('date', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[DB] Error getting plan items by range:', error.message);
+    return { data: [], error };
+  }
+  return { data: data || [], error: null };
+}
+
 module.exports = {
   createPlanItem,
   createPlanItems,
   createPlanItemsWithDetails,
   getPlanItemsByDate,
+  getPlanItemsByDateRange,
   updatePlanItem,
   getPlanItemById,
   deletePlanItem,

@@ -1,5 +1,5 @@
 const { bot } = require('../src/bot/index');
-const { getAllActiveUsers, getMorningMessage, getEveningMessage, getReminderType } = require('../src/services/reminder');
+const { getAllActiveUsers, getMorningMessage, getEveningMessage, getWeeklyMessage, getReminderType } = require('../src/services/reminder');
 
 module.exports = async (req, res) => {
   console.log('[REMIND] Reminder endpoint called');
@@ -23,6 +23,8 @@ module.exports = async (req, res) => {
       try {
         const message = type === 'morning'
           ? await getMorningMessage(user.id)
+          : type === 'weekly'
+          ? await getWeeklyMessage(user.id)
           : await getEveningMessage(user.id);
 
         if (!message) {

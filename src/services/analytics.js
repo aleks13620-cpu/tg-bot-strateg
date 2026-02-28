@@ -122,9 +122,89 @@ function formatSprintStats(stats) {
   return text;
 }
 
+async function getWeekStats(userId, weekStart, weekEnd) {
+  const { data: items, error } = await supabase
+    .from('plan_items')
+    .select('*, initiative:initiatives(id, title)')
+    .eq('user_id', userId)
+    .gte('date', weekStart)
+    .lte('date', weekEnd);
+
+  if (error) {
+    console.error('[ANALYTICS] Error getting week stats:', error.message);
+    return null;
+  }
+
+  const done = items.filter((i) => i.status === 'done');
+  const strategicDone = done.filter((i) => i.is_strategic).length;
+  const fireDone = done.filter((i) => !i.is_strategic).length;
+  const sfi = done.length > 0 ? Math.round((strategicDone / done.length) * 100) : 0;
+
+  const byInitiative = {};
+  done.forEach((item) => {
+    if (item.initiative) {
+      const title = item.initiative.title;
+      byInitiative[title] = (byInitiative[title] || 0) + 1;
+    }
+  });
+
+  const dayMap = {};
+  items.forEach((item) => { dayMap[item.date] = true; });
+
+  return {
+    totalTasks: items.length,
+    done: done.length,
+    strategicDone,
+    fireDone,
+    sfi,
+    daysWorked: Object.keys(dayMap).length,
+    byInitiative,
+  };
+}
+
+function formatWeekStats(stats, weekStart, weekEnd, prevStats) {
+  const [, sm, sd] = weekStart.split('-');
+  const [, em, ed] = weekEnd.split('-');
+  const dateRange = `${sd}.${sm}–${ed}.${em}`;
+
+  if (!stats || stats.totalTasks === 0) {
+    return `📊 *Итоги недели ${dateRange}*\n\nЗадач не было.`;
+  }
+
+  let text = `📊 *Итоги недели ${dateRange}*\n\n`;
+  text += `📅 Активных дней: ${stats.daysWorked}/7\n`;
+  text += `✅ Выполнено: ${stats.done} из ${stats.totalTasks}\n`;
+  text += `📊 По стратегии: ${stats.strategicDone}\n`;
+  text += `🔥 Вне стратегии: ${stats.fireDone}`;
+
+  if (Object.keys(stats.byInitiative).length > 0) {
+    text += '\n\n*По инициативам:*\n';
+    for (const [title, count] of Object.entries(stats.byInitiative)) {
+      text += `  🎯 ${title}: ${count}\n`;
+    }
+    text = text.trimEnd();
+  }
+
+  text += `\n\n🎯 *SFI: ${stats.sfi}%*`;
+  if (stats.sfi >= 70) text += ' — Отлично!';
+  else if (stats.sfi >= 50) text += ' — Хорошо';
+  else if (stats.sfi > 0) text += ' — Нужно больше фокуса';
+
+  if (prevStats && prevStats.totalTasks > 0) {
+    const sfiDiff = stats.sfi - prevStats.sfi;
+    const doneDiff = stats.done - prevStats.done;
+    text += `\n\nvs прошлая неделя: SFI ${sfiDiff >= 0 ? '+' : ''}${sfiDiff}% ${sfiDiff >= 0 ? '📈' : '📉'}`;
+    if (doneDiff !== 0) text += ` · выполнено ${doneDiff >= 0 ? '+' : ''}${doneDiff}`;
+  }
+
+  return text;
+}
+
 module.exports = {
   getDayStats,
   getSprintStats,
+  getWeekStats,
   formatDayStats,
   formatSprintStats,
+  formatWeekStats,
 };
