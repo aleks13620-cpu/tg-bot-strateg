@@ -1,13 +1,13 @@
 const { createSprint, getActiveSprint } = require('../database/queries/sprints');
 const { createInitiative } = require('../database/queries/initiatives');
 
-async function startNewSprint(userId, goalText, initiativeTitles, durationDays = 14) {
+async function startNewSprint(userId, goalText, initiativeTitles, durationDays = 14, financialGoal = null) {
   const startDate = new Date().toISOString().split('T')[0];
   const endDate = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000)
     .toISOString().split('T')[0];
 
   const { data: sprint, error: sprintError } = await createSprint(
-    userId, startDate, endDate, goalText
+    userId, startDate, endDate, goalText, financialGoal
   );
 
   if (sprintError) {
@@ -33,7 +33,11 @@ function formatSprint(sprint) {
   const end = new Date(sprint.end_date).toLocaleDateString('ru-RU');
 
   let text = `🎯 *Спринт: ${sprint.goal_text}*\n`;
-  text += `📅 ${start} — ${end}\n\n`;
+  text += `📅 ${start} — ${end}\n`;
+  if (sprint.financial_goal) {
+    text += `💰 *Финансовая цель:* ${sprint.financial_goal}\n`;
+  }
+  text += '\n';
 
   const initiatives = sprint.initiatives || [];
   if (initiatives.length > 0) {
@@ -56,6 +60,9 @@ function formatSprintCompact(sprint, index, total) {
   let text = `🎯 *Спринт ${index + 1}/${total}*\n`;
   text += `*Цель:* ${sprint.goal_text}\n`;
   text += `📅 ${start} — ${end}\n`;
+  if (sprint.financial_goal) {
+    text += `💰 *Финансовая цель:* ${sprint.financial_goal}\n`;
+  }
 
   if (initiatives.length > 0) {
     text += `📌 *Инициативы:*\n`;

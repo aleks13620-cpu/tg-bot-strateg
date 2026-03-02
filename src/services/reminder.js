@@ -153,14 +153,17 @@ async function getWeeklyMessage(userId) {
   const prevEnd = new Date(weekEnd);
   prevEnd.setDate(weekEnd.getDate() - 7);
 
-  const [stats, prevStats] = await Promise.all([
+  const { getActiveSprint } = require('../database/queries/sprints');
+  const [stats, prevStats, { data: activeSprint }] = await Promise.all([
     getWeekStats(userId, weekStartStr, weekEndStr),
     getWeekStats(userId, prevStart.toISOString().split('T')[0], prevEnd.toISOString().split('T')[0]),
+    getActiveSprint(userId),
   ]);
 
   if (!stats || stats.totalTasks === 0) return null;
 
-  const text = formatWeekStats(stats, weekStartStr, weekEndStr, prevStats);
+  const financialGoal = activeSprint?.financial_goal || null;
+  const text = formatWeekStats(stats, weekStartStr, weekEndStr, prevStats, financialGoal);
 
   return {
     text,

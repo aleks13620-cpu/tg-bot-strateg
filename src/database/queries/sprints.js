@@ -1,15 +1,18 @@
 const { supabase } = require('../../../config/database');
 
-async function createSprint(userId, startDate, endDate, goalText) {
+async function createSprint(userId, startDate, endDate, goalText, financialGoal = null) {
+  const record = {
+    user_id: userId,
+    start_date: startDate,
+    end_date: endDate,
+    goal_text: goalText,
+    status: 'active',
+  };
+  if (financialGoal) record.financial_goal = financialGoal;
+
   const { data, error } = await supabase
     .from('sprints')
-    .insert({
-      user_id: userId,
-      start_date: startDate,
-      end_date: endDate,
-      goal_text: goalText,
-      status: 'active',
-    })
+    .insert(record)
     .select()
     .single();
 

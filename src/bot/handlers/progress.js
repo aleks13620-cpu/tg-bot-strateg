@@ -88,12 +88,14 @@ async function showWeekStats(ctx, offset) {
 
     // Прошлая неделя для сравнения
     const prev = getWeekRange(offset - 1);
-    const [stats, prevStats] = await Promise.all([
+    const [stats, prevStats, { data: activeSprint }] = await Promise.all([
       getWeekStats(user.id, start, end),
       getWeekStats(user.id, prev.start, prev.end),
+      getActiveSprint(user.id),
     ]);
 
-    const text = formatWeekStats(stats, start, end, prevStats);
+    const financialGoal = activeSprint?.financial_goal || null;
+    const text = formatWeekStats(stats, start, end, prevStats, financialGoal);
 
     // Навигация: нельзя уйти вперёд текущей недели
     const navButtons = [];

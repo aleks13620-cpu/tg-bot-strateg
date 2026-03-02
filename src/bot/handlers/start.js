@@ -17,12 +17,34 @@ function registerStartHandlers(bot) {
 
       const isNewUser = (Date.now() - new Date(user.created_at).getTime()) < 5000;
 
-      const welcomeText = isNewUser
-        ? '🎯 Добро пожаловать в Стратег-Ассистент!\n\nЯ помогу вам управлять стратегическими целями, планировать спринты и отслеживать прогресс.\n\nВыберите действие:'
-        : '👋 С возвращением!\n\nВыберите действие:';
-
       await ctx.reply('Клавиатура активирована:', persistentKeyboard);
-      await ctx.reply(welcomeText, mainMenuKeyboard);
+
+      if (isNewUser) {
+        await ctx.reply(
+          '👋 Привет! Я *Стратег-Ассистент* — помогаю предпринимателям двигаться к стратегическим целям, не теряясь в текучке.\n\n' +
+          '📐 *Как это работает — 3 уровня:*\n\n' +
+          '1️⃣ *СПРИНТ* — ваша главная цель на 2 недели\n' +
+          '_Пример: "Расширить ближний круг"_\n\n' +
+          '2️⃣ *ИНИЦИАТИВЫ* — ключевые направления для достижения цели\n' +
+          '_Пример: организовать деловые встречи · посещать бизнес-мероприятия · вступить в бизнес-клуб · наладить контакт с Иваном_\n\n' +
+          '3️⃣ *ЗАДАЧИ* — конкретные действия на каждый день\n' +
+          '_Пример (по инициативе "Вступить в бизнес-клуб"): найти клубы в городе → обзвонить → записаться на встречу_\n\n' +
+          '📊 Каждый вечер бот считает *SFI* (Strategic Focus Index) — процент задач, которые двигали вас к цели спринта, а не просто "тушили пожары".',
+          { parse_mode: 'Markdown' }
+        );
+        await ctx.reply(
+          '🚀 *Готовы начать?*\n\nСоздайте первый спринт — задайте цель на ближайшие 2 недели.',
+          {
+            parse_mode: 'Markdown',
+            ...require('telegraf').Markup.inlineKeyboard([
+              [require('telegraf').Markup.button.callback('🚀 Создать первый спринт', 'action_new_sprint')],
+              [require('telegraf').Markup.button.callback('💡 Что ещё умеет бот', 'action_help_overview')],
+            ]),
+          }
+        );
+      } else {
+        await ctx.reply('👋 С возвращением!\n\nВыберите действие:', mainMenuKeyboard);
+      }
       console.log(`[START] User ${telegramId} - ${isNewUser ? 'new' : 'returning'}`);
     } catch (error) {
       console.error('[START] Unhandled error:', error.message);
@@ -84,6 +106,27 @@ function registerStartHandlers(bot) {
   });
 
   // action_analytics обрабатывается в handlers/progress.js
+
+  bot.action('action_help_overview', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply(
+      '💡 *Что умеет Стратег-Ассистент:*\n\n' +
+      '📋 *Планирование дня* — каждое утро в 8:00 (МСК) бот предложит запланировать задачи по вашим инициативам\n\n' +
+      '🌙 *Закрытие дня* — вечером в 18:00 (МСК) отмечаете что сделано, бот считает SFI\n\n' +
+      '📊 *SFI (Strategic Focus Index)* — процент задач дня, которые относятся к спринту. Показывает насколько вы сфокусированы на стратегии, а не на "текучке"\n\n' +
+      '🎯 *Спринт* — цель на 2 недели с инициативами\n' +
+      '📌 *Инициативы* — 3–5 ключевых направлений внутри спринта\n' +
+      '✅ *Задачи* — ежедневные действия, привязанные к инициативам\n\n' +
+      '🔥 *Оперативные задачи* — срочные дела вне спринта (тоже важны, но SFI они снижают)\n\n' +
+      '📈 *Еженедельный отчёт* — итоги недели с динамикой',
+      {
+        parse_mode: 'Markdown',
+        ...require('telegraf').Markup.inlineKeyboard([
+          [require('telegraf').Markup.button.callback('🚀 Создать спринт', 'action_new_sprint')],
+        ]),
+      }
+    );
+  });
 
   bot.action('action_settings', async (ctx) => {
     await ctx.answerCbQuery();

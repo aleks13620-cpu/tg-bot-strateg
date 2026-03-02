@@ -6,13 +6,14 @@ const { KEYBOARD_BUTTONS } = require('../../utils/keyboards');
 const onboardingScene = new Scenes.WizardScene(
   'onboarding',
 
-  // Шаг 0: Приветствие и запрос цели спринта
+  // Шаг 0: Запрос цели спринта
   async (ctx) => {
     await ctx.reply(
-      '🚀 *Создание нового спринта*\n\n' +
-      'Спринт — это 2-недельный фокус на вашей главной стратегической цели.\n\n' +
-      'Напишите *цель спринта* одним предложением:\n' +
-      '_Например: "Запустить новый продукт" или "Увеличить конверсию на 20%"_',
+      '🚀 *Создание спринта — шаг 1 из 3*\n\n' +
+      '*Спринт* — ваша главная цель на ближайшие 2 недели.\n\n' +
+      'Формулируйте как результат, которого хотите достичь:\n' +
+      '_"Расширить ближний круг" · "Запустить MVP" · "Закрыть первые 3 клиента"_\n\n' +
+      'Напишите *цель спринта* одним предложением:',
       { parse_mode: 'Markdown' }
     );
     ctx.wizard.state.initiatives = [];
@@ -34,21 +35,28 @@ const onboardingScene = new Scenes.WizardScene(
     ctx.wizard.state.goal = ctx.message.text.trim();
 
     await ctx.reply(
-      `✅ Цель: *${ctx.wizard.state.goal}*\n\n` +
-      'Теперь добавьте *инициативы* (3-5 ключевых действий для достижения цели).\n\n' +
-      'Напишите *первую инициативу*:\n' +
-      '_Например: "Разработать прототип MVP"_',
+      `✅ Цель спринта: *${ctx.wizard.state.goal}*\n\n` +
+      '— — —\n\n' +
+      '*Шаг 2 из 3 — Инициативы*\n\n' +
+      '*Инициатива* — ключевое направление для достижения цели.\n' +
+      'На каждый спринт: 3–5 инициатив.\n\n' +
+      '_Пример (цель "Расширить ближний круг"):_\n' +
+      '_• Организовывать деловые встречи_\n' +
+      '_• Посещать бизнес-мероприятия_\n' +
+      '_• Вступить в бизнес-клуб_\n' +
+      '_• Наладить контакт с Иваном_\n\n' +
+      'Напишите *первую инициативу* вашего спринта:',
       { parse_mode: 'Markdown' }
     );
     return ctx.wizard.next();
   },
 
-  // Шаг 2: Собираем инициативы (цикл)
+  // Шаг 2: Собираем инициативы + в конце показываем запрос финансовой цели
   async (ctx) => {
-    // Обработка кнопок
     if (ctx.callbackQuery) {
       if (ctx.callbackQuery.data === 'onboarding_done') {
         await ctx.answerCbQuery();
+        await showFinancialGoalPrompt(ctx);
         return ctx.wizard.next();
       }
       if (ctx.callbackQuery.data === 'onboarding_cancel') {
@@ -77,24 +85,25 @@ const onboardingScene = new Scenes.WizardScene(
     if (count >= 5) {
       await ctx.reply(
         `✅ Инициатива ${count}: *${initiative}*\n\n` +
-        'Вы добавили максимум инициатив (5). Переходим к подтверждению...',
+        'Максимум инициатив добавлен (5).',
         { parse_mode: 'Markdown' }
       );
+      await showFinancialGoalPrompt(ctx);
       return ctx.wizard.next();
     }
 
     const buttons = [];
     if (count >= 3) {
-      buttons.push([Markup.button.callback('✅ Готово — создать спринт', 'onboarding_done')]);
+      buttons.push([Markup.button.callback('✅ Готово — перейти дальше', 'onboarding_done')]);
     }
     buttons.push([Markup.button.callback('❌ Отмена', 'onboarding_cancel')]);
 
     await ctx.reply(
-      `✅ Инициатива ${count}: *${initiative}*\n\n` +
-      `Добавлено: ${count}/5\n` +
+      `✅ Инициатива ${count}: *${initiative}*\n` +
+      `Добавлено: ${count}/5\n\n` +
       (count < 3
-        ? `Напишите следующую инициативу (минимум 3):`
-        : `Напишите ещё инициативу или нажмите "Готово":`),
+        ? `Напишите следующую инициативу (нужно минимум 3):`
+        : `Напишите ещё инициативу или нажмите *"Готово"*:`),
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard(buttons),
@@ -103,17 +112,43 @@ const onboardingScene = new Scenes.WizardScene(
     return;
   },
 
-  // Шаг 3: Подтверждение
+  // Шаг 3: Получаем ответ на финансовую цель (текст или пропуск)
   async (ctx) => {
-    const { goal, initiatives } = ctx.wizard.state;
+    if (ctx.callbackQuery) {
+      if (ctx.callbackQuery.data === 'onboarding_fin_skip') {
+        await ctx.answerCbQuery();
+        ctx.wizard.state.financialGoal = null;
+        return ctx.wizard.next();
+      }
+      // Любой другой callback — игнорируем, ждём следующего ввода
+      return;
+    }
 
-    let summary = `📋 *Ваш новый спринт (14 дней):*\n\n`;
-    summary += `🎯 *Цель:* ${goal}\n\n`;
-    summary += `*Инициативы:*\n`;
+    if (!ctx.message?.text) return;
+
+    if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
+      await ctx.reply('❌ Создание спринта отменено.');
+      return ctx.scene.leave();
+    }
+
+    ctx.wizard.state.financialGoal = ctx.message.text.trim();
+    return ctx.wizard.next();
+  },
+
+  // Шаг 4: Подтверждение — показываем итоговую сводку
+  async (ctx) => {
+    const { goal, initiatives, financialGoal } = ctx.wizard.state;
+
+    let summary = `📋 *Подтверждение*\n\n`;
+    summary += `🎯 *Цель спринта (14 дней):*\n${goal}\n\n`;
+    if (financialGoal) {
+      summary += `💰 *Финансовая цель:* ${financialGoal}\n\n`;
+    }
+    summary += `📌 *Инициативы:*\n`;
     initiatives.forEach((init, i) => {
       summary += `${i + 1}. ${init}\n`;
     });
-    summary += `\nСоздать спринт?`;
+    summary += `\n_После создания каждое утро планируйте задачи по инициативам._\n\nСоздать спринт?`;
 
     await ctx.reply(summary, {
       parse_mode: 'Markdown',
@@ -125,7 +160,7 @@ const onboardingScene = new Scenes.WizardScene(
     return ctx.wizard.next();
   },
 
-  // Шаг 4: Создание спринта в БД
+  // Шаг 5: Создание спринта в БД
   async (ctx) => {
     if (!ctx.callbackQuery) return;
 
@@ -147,23 +182,32 @@ const onboardingScene = new Scenes.WizardScene(
           return ctx.scene.leave();
         }
 
-        const { goal, initiatives } = ctx.wizard.state;
-        const { data: sprint, error } = await startNewSprint(user.id, goal, initiatives);
+        const { goal, initiatives, financialGoal } = ctx.wizard.state;
+        const { data: sprint, error } = await startNewSprint(user.id, goal, initiatives, 14, financialGoal);
 
         if (error) {
           await ctx.reply('Ошибка при создании спринта. Попробуйте позже.');
           return ctx.scene.leave();
         }
 
-        await ctx.reply(
+        let successMsg =
           `🎉 *Спринт создан!*\n\n` +
-          `🎯 ${sprint.goal_text}\n` +
-          `📅 ${new Date(sprint.start_date).toLocaleDateString('ru-RU')} — ${new Date(sprint.end_date).toLocaleDateString('ru-RU')}\n` +
-          `📌 ${sprint.initiatives.length} инициатив\n\n` +
-          `Напоминания: 9:00 (план дня) и 19:00 (закрытие дня)\n\n` +
-          `Используйте /menu для навигации.`,
-          { parse_mode: 'Markdown' }
-        );
+          `🎯 *Цель:* ${sprint.goal_text}\n` +
+          `📅 ${new Date(sprint.start_date).toLocaleDateString('ru-RU')} — ${new Date(sprint.end_date).toLocaleDateString('ru-RU')}\n`;
+
+        if (sprint.financial_goal) {
+          successMsg += `💰 *Финансовая цель:* ${sprint.financial_goal}\n`;
+        }
+
+        successMsg +=
+          `📌 Инициатив: ${sprint.initiatives.length}\n\n` +
+          `*Что дальше?*\n` +
+          `• Утром в 8:00 (МСК) — план дня: ставьте задачи по инициативам\n` +
+          `• Вечером в 18:00 (МСК) — закрытие дня: отмечайте что сделано\n` +
+          `• Кнопка *"📋 Добавить задачи"* — добавить задачи в любое время\n\n` +
+          `_Задачи по инициативам = стратегические. Остальные = оперативные. SFI показывает ваш баланс._`;
+
+        await ctx.reply(successMsg, { parse_mode: 'Markdown' });
 
         console.log(`[ONBOARDING] Sprint ${sprint.id} created for user ${user.id}`);
       } catch (error) {
@@ -177,5 +221,20 @@ const onboardingScene = new Scenes.WizardScene(
     await ctx.answerCbQuery();
   }
 );
+
+async function showFinancialGoalPrompt(ctx) {
+  await ctx.reply(
+    '💰 *Финансовая цель спринта (необязательно)*\n\n' +
+    'Есть ли у этого спринта финансовый ориентир?\n\n' +
+    '_Пример: "Выручка 500 000 ₽" · "Закрыть сделок на 1 млн" · "3 клиента по 100К"_\n\n' +
+    'Напишите цель или пропустите:',
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('⏭ Пропустить', 'onboarding_fin_skip')],
+      ]),
+    }
+  );
+}
 
 module.exports = { onboardingScene };
