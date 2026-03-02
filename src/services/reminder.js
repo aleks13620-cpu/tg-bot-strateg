@@ -188,12 +188,14 @@ async function getReactivationMessage(userId) {
 
   if (!user) return null;
 
+  // Если last_active_at не заполнен (старый пользователь) — не беспокоим,
+  // ждём пока middleware заполнит его при следующем взаимодействии
+  if (!user.last_active_at) return null;
+
   // Проверяем: если активность была меньше 3 дней назад — не беспокоим
-  if (user.last_active_at) {
-    const lastActive = new Date(user.last_active_at);
-    const daysSince = (Date.now() - lastActive.getTime()) / (1000 * 60 * 60 * 24);
-    if (daysSince < 3) return null;
-  }
+  const lastActive = new Date(user.last_active_at);
+  const daysSince = (Date.now() - lastActive.getTime()) / (1000 * 60 * 60 * 24);
+  if (daysSince < 3) return null;
 
   const { data: sprint } = await getActiveSprint(userId);
 
