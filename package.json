@@ -5,7 +5,9 @@
   "main": "src/bot/index.js",
   "scripts": {
     "dev": "node src/bot/index.js",
-    "start": "node src/bot/index.js"
+    "start": "node src/bot/index.js",
+    "local": "curl -s https://api.telegram.org/bot$BOT_TOKEN/deleteWebhook && node src/bot/index.js",
+    "deploy": "git add -A && git commit -m \"update bot\" && git push && curl -s https://api.telegram.org/bot$BOT_TOKEN/setWebhook?url=https://tg-bot-strateg-1ukh.vercel.app/api/webhook"
   },
   "dependencies": {
     "telegraf": "^4.16.3",
