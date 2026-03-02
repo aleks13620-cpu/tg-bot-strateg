@@ -7,6 +7,7 @@ const { generateCoaching } = require('../../services/coaching/simpleCoaching');
 const { saveCoachingAnswer, getLastUnansweredQuestion } = require('../../database/queries/coaching');
 const { persistentKeyboard, KEYBOARD_BUTTONS } = require('../../utils/keyboards');
 const { sendPlanMessages } = require('./plan');
+const { updateStreak } = require('../../services/streak');
 
 function registerDayCloseHandlers(bot) {
   // Reply keyboard: кнопка "Закрыть день"
@@ -46,7 +47,20 @@ function registerDayCloseHandlers(bot) {
 
       const date = getTodayDate();
       const stats = await getDayStats(user.id, date);
-      await ctx.reply(formatDayStats(stats), { parse_mode: 'Markdown' });
+
+      // Обновляем стрик если есть выполненные задачи
+      let streakResult = null;
+      if (stats && stats.done > 0) {
+        streakResult = await updateStreak(user.id, date);
+      }
+
+      let summaryText = formatDayStats(stats);
+
+      // Маленькие победы
+      const winMsg = getSmallWinMessage(streakResult, stats);
+      if (winMsg) summaryText += `\n\n${winMsg}`;
+
+      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
 
       // Проверяем skipped задачи для переноса
       const { data: items } = await getPlanItemsByDate(user.id, date);
@@ -176,6 +190,24 @@ function registerDayCloseHandlers(bot) {
       await ctx.reply('Ошибка при сохранении ответа.');
     }
   });
+}
+
+function getSmallWinMessage(streakResult, stats) {
+  const messages = [];
+
+  if (streakResult && streakResult.isNew) {
+    const s = streakResult.streak;
+    if (s === 3) messages.push('🔥 *3 дня подряд!* Ты в потоке — так держать!');
+    else if (s === 7) messages.push('🏆 *Неделя без пропусков!* Это феноменально!');
+    else if (s === 14) messages.push('🌟 *14 дней подряд!* Это уже привычка на всю жизнь!');
+    else if (s === 30) messages.push('🚀 *30 дней подряд!* Ты — машина продуктивности!');
+  }
+
+  if (stats && stats.sfi >= 80 && stats.done > 0) {
+    messages.push('🎯 *SFI 80%+!* Сегодня ты в стратегическом фокусе!');
+  }
+
+  return messages.length > 0 ? messages.join('\n') : null;
 }
 
 async function showCoaching(ctx, userId, date) {

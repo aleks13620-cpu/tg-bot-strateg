@@ -205,6 +205,32 @@ function formatWeekStats(stats, weekStart, weekEnd, prevStats, financialGoal = n
   return text;
 }
 
+/**
+ * Прогресс-бар для спринта.
+ * Пример: ████████░░ 8/14 дн. · SFI 67% 🟡
+ */
+function formatSprintProgressBar(sprint, sfi = null) {
+  const today = new Date();
+  const start = new Date(sprint.start_date + 'T00:00:00Z');
+  const end = new Date(sprint.end_date + 'T00:00:00Z');
+
+  const totalDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+  const daysUsed = Math.max(1, Math.min(totalDays, Math.round((today - start) / (1000 * 60 * 60 * 24)) + 1));
+
+  const filledCount = Math.round((daysUsed / totalDays) * 10);
+  const emptyCount = 10 - filledCount;
+  const bar = '█'.repeat(filledCount) + '░'.repeat(emptyCount);
+
+  let text = `${bar} ${daysUsed}/${totalDays} дн.`;
+
+  if (sfi !== null) {
+    const sfiIcon = sfi >= 70 ? '🟢' : sfi >= 50 ? '🟡' : sfi > 0 ? '🔴' : '';
+    text += ` · SFI ${sfi}%${sfiIcon ? ' ' + sfiIcon : ''}`;
+  }
+
+  return text;
+}
+
 module.exports = {
   getDayStats,
   getSprintStats,
@@ -212,4 +238,5 @@ module.exports = {
   formatDayStats,
   formatSprintStats,
   formatWeekStats,
+  formatSprintProgressBar,
 };

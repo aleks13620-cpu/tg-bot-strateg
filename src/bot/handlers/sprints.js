@@ -1,8 +1,11 @@
 const { Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
-const { getActiveSprints, completeSprint, updateSprintGoal } = require('../../database/queries/sprints');
+const { getActiveSprints, getSprintById, completeSprint, updateSprintGoal } = require('../../database/queries/sprints');
 const { createInitiative, getInitiativesBySprint, updateInitiativeTitle, deleteInitiative } = require('../../database/queries/initiatives');
-const { formatSprintCompact } = require('../../services/sprint');
+const { formatSprintCompact, formatSprintCompletionCard } = require('../../services/sprint');
+const { getSprintStats } = require('../../services/analytics');
+const { getStreakInfo } = require('../../services/streak');
+const { getLastFinancialProgress } = require('../../database/queries/finance');
 const { KEYBOARD_BUTTONS, persistentKeyboard } = require('../../utils/keyboards');
 
 function registerSprintsHandlers(bot) {
@@ -54,19 +57,40 @@ function registerSprintsHandlers(bot) {
   });
 
   // Завершение спринта
-  bot.action(/^complete_sprint_(\d+)$/, async (ctx) => {
+  bot.action(/^complete_sprint_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('Завершаю спринт...');
     try {
-      const sprintId = parseInt(ctx.match[1]);
-      const { error } = await completeSprint(sprintId);
+      const sprintId = ctx.match[1];
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
 
+      // Загружаем данные спринта ДО завершения
+      const { data: sprint } = await getSprintById(sprintId);
+
+      const { error } = await completeSprint(sprintId);
       if (error) {
         await ctx.reply('Ошибка при завершении спринта.');
         return;
       }
 
-      await ctx.editMessageText('✅ Спринт завершён!');
-      console.log(`[SPRINTS] Sprint ${sprintId} completed`);
+      await ctx.editMessageText('✅ Завершаю спринт...');
+
+      // Формируем карточку завершения
+      try {
+        const [stats, streakInfo, { data: lastFinance }] = await Promise.all([
+          sprint ? getSprintStats(user.id, sprint.start_date, sprint.end_date) : Promise.resolve(null),
+          getStreakInfo(user.id),
+          sprint ? getLastFinancialProgress(user.id, sprintId) : Promise.resolve({ data: null }),
+        ]);
+
+        const card = formatSprintCompletionCard(sprint, stats, streakInfo.max, lastFinance);
+        await ctx.reply(card, { parse_mode: 'Markdown' });
+      } catch (cardError) {
+        console.error('[SPRINTS] Card error:', cardError.message);
+        await ctx.reply('✅ Спринт завершён!');
+      }
+
+      console.log(`[SPRINTS] Sprint ${sprintId} completed for user ${user.id}`);
     } catch (error) {
       console.error('[SPRINTS] Complete error:', error.message);
       await ctx.reply('Ошибка при завершении спринта.');

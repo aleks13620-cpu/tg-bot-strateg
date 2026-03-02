@@ -1,10 +1,17 @@
 const { bot } = require('../src/bot/index');
-const { getAllActiveUsers, getMorningMessage, getEveningMessage, getWeeklyMessage, getReminderType } = require('../src/services/reminder');
+const {
+  getAllActiveUsers,
+  getMorningMessage,
+  getEveningMessage,
+  getMidDayMessage,
+  getReactivationMessage,
+  getWeeklyMessage,
+  getReminderType,
+} = require('../src/services/reminder');
 
 module.exports = async (req, res) => {
   console.log('[REMIND] Reminder endpoint called');
 
-  // Проверка секрета (защита от случайных вызовов)
   const secret = req.headers['x-webhook-secret'] || req.query.secret;
   if (secret !== process.env.WEBHOOK_SECRET) {
     console.warn('[REMIND] Invalid secret');
@@ -21,11 +28,19 @@ module.exports = async (req, res) => {
 
     for (const user of users) {
       try {
-        const message = type === 'morning'
-          ? await getMorningMessage(user.id)
-          : type === 'weekly'
-          ? await getWeeklyMessage(user.id)
-          : await getEveningMessage(user.id);
+        let message = null;
+
+        if (type === 'morning') {
+          message = await getMorningMessage(user.id);
+        } else if (type === 'weekly') {
+          message = await getWeeklyMessage(user.id);
+        } else if (type === 'midday') {
+          message = await getMidDayMessage(user.id);
+        } else if (type === 'reactivation') {
+          message = await getReactivationMessage(user.id);
+        } else {
+          message = await getEveningMessage(user.id);
+        }
 
         if (!message) {
           skipped++;
@@ -44,7 +59,7 @@ module.exports = async (req, res) => {
       }
     }
 
-    console.log(`[REMIND] Sent: ${sent}, Skipped: ${skipped}, Failed: ${failed}`);
+    console.log(`[REMIND] type=${type} Sent: ${sent}, Skipped: ${skipped}, Failed: ${failed}`);
     res.status(200).json({ ok: true, sent, skipped, failed, type });
   } catch (error) {
     console.error('[REMIND] Error:', error.message);

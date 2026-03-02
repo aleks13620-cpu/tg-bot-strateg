@@ -1,7 +1,10 @@
 const { supabase } = require('../../config/database');
 const { Markup } = require('telegraf');
-const { getTodayPlan, formatDateRu } = require('./planning');
-const { getPlanItemsByDateRange } = require('../database/queries/planItems');
+const { getTodayPlan, formatDateRu, getTodayDate } = require('./planning');
+const { getPlanItemsByDateRange, getPlanItemsByDate } = require('../database/queries/planItems');
+const { getActiveSprint } = require('../database/queries/sprints');
+const { getStreakInfo } = require('./streak');
+const { getWeekStats, formatWeekStats, formatSprintProgressBar, getDayStats } = require('./analytics');
 
 async function getAllActiveUsers() {
   const { data, error } = await supabase
@@ -46,43 +49,65 @@ async function getUpcomingTasks(userId) {
   const { data: items } = await getPlanItemsByDateRange(userId, startDate, endDate);
   if (!items || items.length === 0) return [];
 
-  // Группировка по датам
   const dateMap = {};
   items.forEach((item) => {
     if (!dateMap[item.date]) dateMap[item.date] = [];
     dateMap[item.date].push(item);
   });
 
-  // Берём до 3 ближайших дат с задачами
   return Object.entries(dateMap)
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(0, 3)
     .map(([date, dayItems]) => ({
       dateLabel: formatDateRu(date),
       count: dayItems.length,
-      // Первые 2 текста задач для ближайшего дня
       texts: dayItems.slice(0, 2).map((i) => i.text_raw),
     }));
 }
 
 async function getMorningMessage(userId) {
-  const status = await getUserDayStatus(userId);
-  const upcoming = await getUpcomingTasks(userId);
+  const date = getTodayDate();
 
-  let text;
+  const [status, upcoming, { data: sprint }, streak] = await Promise.all([
+    getUserDayStatus(userId),
+    getUpcomingTasks(userId),
+    getActiveSprint(userId),
+    getStreakInfo(userId),
+  ]);
+
+  let text = '☀️ *Доброе утро!*\n\n';
+
+  // Контекст спринта
+  if (sprint) {
+    text += `🎯 *${sprint.goal_text}*\n`;
+    // Прогресс-бар (без SFI в утреннем — данных дня ещё нет)
+    text += formatSprintProgressBar(sprint) + '\n\n';
+  }
+
+  // Стрик
+  if (streak.current >= 2) {
+    text += `🔥 Стрик: ${streak.current} дн. подряд!\n\n`;
+  }
+
   if (!status.hasPlan) {
-    text = '☀️ *Доброе утро!*\n\nПора спланировать день. Какие задачи на сегодня?';
+    text += '📋 На сегодня задач нет. Самое время спланировать день! 💪';
   } else {
-    text = `☀️ *Доброе утро!*\n\nНа сегодня: ${status.total} задач`;
+    text += `На сегодня: *${status.total} задач*`;
     if (status.done > 0) text += ` (выполнено ${status.done})`;
-    text += '. Удачного дня! 💪';
+
+    // Задача дня — первая стратегическая
+    const { data: todayItems } = await getPlanItemsByDate(userId, date);
+    const keyTask = todayItems.find((i) => i.is_strategic && i.status === 'pending');
+    if (keyTask) {
+      const preview = keyTask.text_raw.length > 60 ? keyTask.text_raw.slice(0, 57) + '…' : keyTask.text_raw;
+      text += `\n\n🎯 *Задача дня:*\n${preview}`;
+    }
   }
 
   if (upcoming.length > 0) {
     text += '\n\n📅 *Ближайшие дни:*';
     upcoming.forEach((day, idx) => {
       if (idx === 0 && day.texts.length > 0) {
-        // Для ближайшего дня показываем первые задачи
         text += `\n${day.dateLabel} — ${day.count} задач`;
         day.texts.forEach((t) => {
           const preview = t.length > 40 ? t.slice(0, 40) + '…' : t;
@@ -132,9 +157,63 @@ async function getEveningMessage(userId) {
   };
 }
 
-async function getWeeklyMessage(userId) {
-  const { getWeekStats, formatWeekStats } = require('./analytics');
+async function getMidDayMessage(userId) {
+  const date = getTodayDate();
+  const stats = await getDayStats(userId, date);
 
+  // Отправляем только если есть задачи, но ни одна не выполнена и есть pending
+  if (!stats || stats.total === 0) return null;
+  if (stats.done > 0) return null;
+  if (stats.pending === 0) return null;
+
+  const text =
+    `☀️ *Полдень!*\n\n` +
+    `Ещё есть время выполнить задачи — их осталось ${stats.pending}.\n` +
+    `Удачи! 💪`;
+
+  return {
+    text,
+    keyboard: Markup.inlineKeyboard([
+      [Markup.button.callback('📋 Мой план', 'action_today_plan')],
+    ]),
+  };
+}
+
+async function getReactivationMessage(userId) {
+  const { data: user } = await supabase
+    .from('users')
+    .select('last_active_at')
+    .eq('id', userId)
+    .single();
+
+  if (!user) return null;
+
+  // Проверяем: если активность была меньше 3 дней назад — не беспокоим
+  if (user.last_active_at) {
+    const lastActive = new Date(user.last_active_at);
+    const daysSince = (Date.now() - lastActive.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSince < 3) return null;
+  }
+
+  const { data: sprint } = await getActiveSprint(userId);
+
+  let text = '👋 *Давно не виделись!*\n\n';
+  if (sprint) {
+    text += `Твой спринт ждёт:\n🎯 _${sprint.goal_text}_\n\n`;
+    text += 'Самое время вернуться к работе над целью!';
+  } else {
+    text += 'Возвращайся — здесь ждут твои цели.';
+  }
+
+  return {
+    text,
+    keyboard: Markup.inlineKeyboard([
+      [Markup.button.callback('📋 Открыть план', 'action_today_plan')],
+    ]),
+  };
+}
+
+async function getWeeklyMessage(userId) {
   const today = new Date();
   const dayOfWeek = today.getDay();
   const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
@@ -147,13 +226,11 @@ async function getWeeklyMessage(userId) {
   const weekStartStr = weekStart.toISOString().split('T')[0];
   const weekEndStr = weekEnd.toISOString().split('T')[0];
 
-  // Прошлая неделя для сравнения
   const prevStart = new Date(weekStart);
   prevStart.setDate(weekStart.getDate() - 7);
   const prevEnd = new Date(weekEnd);
   prevEnd.setDate(weekEnd.getDate() - 7);
 
-  const { getActiveSprint } = require('../database/queries/sprints');
   const [stats, prevStats, { data: activeSprint }] = await Promise.all([
     getWeekStats(userId, weekStartStr, weekEndStr),
     getWeekStats(userId, prevStart.toISOString().split('T')[0], prevEnd.toISOString().split('T')[0]),
@@ -165,11 +242,20 @@ async function getWeeklyMessage(userId) {
   const financialGoal = activeSprint?.financial_goal || null;
   const text = formatWeekStats(stats, weekStartStr, weekEndStr, prevStats, financialGoal);
 
+  const buttons = [
+    [Markup.button.callback('📊 Подробная аналитика', 'action_week_stats_0')],
+  ];
+
+  // Если есть финансовая цель — добавляем кнопку внесения прогресса
+  if (financialGoal) {
+    buttons.push([Markup.button.callback('💰 Внести прогресс по финцели', `action_finance_input_${weekStartStr}`)]);
+  }
+
   return {
     text,
-    keyboard: Markup.inlineKeyboard([
-      [Markup.button.callback('📊 Подробная аналитика', 'action_week_stats_0')],
-    ]),
+    keyboard: Markup.inlineKeyboard(buttons),
+    sprintId: activeSprint?.id || null,
+    financialGoal,
   };
 }
 
@@ -180,4 +266,12 @@ function getReminderType() {
   return 'evening';
 }
 
-module.exports = { getAllActiveUsers, getMorningMessage, getEveningMessage, getWeeklyMessage, getReminderType };
+module.exports = {
+  getAllActiveUsers,
+  getMorningMessage,
+  getEveningMessage,
+  getMidDayMessage,
+  getReactivationMessage,
+  getWeeklyMessage,
+  getReminderType,
+};

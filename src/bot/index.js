@@ -8,6 +8,8 @@ const { registerDayCloseHandlers } = require('./handlers/dayClose');
 const { registerProgressHandlers } = require('./handlers/progress');
 const { registerUploadHandlers } = require('./handlers/upload');
 const { registerSprintsHandlers } = require('./handlers/sprints');
+const { registerTodayHandlers } = require('./handlers/today');
+const { registerFinanceHandlers } = require('./handlers/finance');
 const { onboardingScene } = require('./scenes/onboarding');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -26,9 +28,11 @@ const stage = new Scenes.Stage([onboardingScene]);
 bot.use(session());
 bot.use(stage.middleware());
 
-// Handlers (порядок важен: sprints text handler должен быть до plan text handler)
+// Handlers (порядок важен: sprints/finance text handlers должны быть до plan text handler)
 registerStartHandlers(bot);
+registerTodayHandlers(bot);
 registerSprintsHandlers(bot);
+registerFinanceHandlers(bot);
 registerPlanHandlers(bot);
 registerDayCloseHandlers(bot);
 registerProgressHandlers(bot);

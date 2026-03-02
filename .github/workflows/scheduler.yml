@@ -4,14 +4,18 @@ on:
   schedule:
     # Утреннее напоминание — 8:00 МСК (5:00 UTC)
     - cron: '0 5 * * *'
+    # Обеденное напоминание — 13:00 МСК (10:00 UTC), будние дни
+    - cron: '0 10 * * 1-5'
     # Вечернее напоминание — 18:00 МСК (15:00 UTC)
     - cron: '0 15 * * *'
     # Еженедельный отчёт — суббота 10:00 МСК (7:00 UTC)
     - cron: '0 7 * * 6'
+    # Реактивация — понедельник 9:00 МСК (6:00 UTC)
+    - cron: '0 6 * * 1'
   workflow_dispatch:
     inputs:
       type:
-        description: 'Reminder type: morning, evening or weekly'
+        description: 'Reminder type: morning, midday, evening, weekly, reactivation'
         required: true
         default: 'morning'
 
@@ -26,8 +30,12 @@ jobs:
             echo "TYPE=${{ github.event.inputs.type }}" >> $GITHUB_OUTPUT
           elif [ "${{ github.event.schedule }}" = "0 5 * * *" ]; then
             echo "TYPE=morning" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" = "0 10 * * 1-5" ]; then
+            echo "TYPE=midday" >> $GITHUB_OUTPUT
           elif [ "${{ github.event.schedule }}" = "0 7 * * 6" ]; then
             echo "TYPE=weekly" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" = "0 6 * * 1" ]; then
+            echo "TYPE=reactivation" >> $GITHUB_OUTPUT
           else
             echo "TYPE=evening" >> $GITHUB_OUTPUT
           fi

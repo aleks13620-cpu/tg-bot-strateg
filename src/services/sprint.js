@@ -76,4 +76,39 @@ function formatSprintCompact(sprint, index, total) {
   return text;
 }
 
-module.exports = { startNewSprint, getActiveSprint, formatSprint, formatSprintCompact };
+/**
+ * Карточка завершения спринта.
+ * stats — результат getSprintStats(), streakMax — число, lastFinancialProgress — запись или null
+ */
+function formatSprintCompletionCard(sprint, stats, streakMax, lastFinancialProgress) {
+  const start = new Date(sprint.start_date).toLocaleDateString('ru-RU');
+  const end = new Date(sprint.end_date).toLocaleDateString('ru-RU');
+
+  let text = `🏁 *Спринт завершён!*\n\n`;
+  text += `🎯 *Цель:* ${sprint.goal_text}\n`;
+  text += `📅 ${start} — ${end}\n\n`;
+
+  if (stats) {
+    text += `✅ Выполнено: *${stats.done}* задач (из ${stats.totalTasks})\n`;
+    text += `🎯 Стратегические: ${stats.strategicDone}\n`;
+    text += `🔥 Оперативные: ${stats.fireDone}\n`;
+    const sfiIcon = stats.sfi >= 70 ? '🟢' : stats.sfi >= 50 ? '🟡' : stats.sfi > 0 ? '🔴' : '';
+    text += `📊 *SFI: ${stats.sfi}%* ${sfiIcon}\n`;
+  }
+
+  if (streakMax && streakMax > 0) {
+    text += `🔥 Макс. стрик: *${streakMax} дн.*\n`;
+  }
+
+  if (sprint.financial_goal) {
+    text += `\n💰 *Финансовая цель:* ${sprint.financial_goal}`;
+    if (lastFinancialProgress) {
+      text += `\n📌 Последний факт: ${lastFinancialProgress.actual_value}`;
+    }
+  }
+
+  text += `\n\n_Отличная работа! Время планировать следующий спринт._`;
+  return text;
+}
+
+module.exports = { startNewSprint, getActiveSprint, formatSprint, formatSprintCompact, formatSprintCompletionCard };

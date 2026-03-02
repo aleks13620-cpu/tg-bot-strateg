@@ -84,4 +84,18 @@ async function updateSprintGoal(sprintId, goalText) {
   return { data, error };
 }
 
-module.exports = { createSprint, getActiveSprint, getActiveSprints, completeSprint, updateSprintGoal };
+async function getSprintById(sprintId) {
+  const { data, error } = await supabase
+    .from('sprints')
+    .select('*, initiatives(*)')
+    .eq('id', sprintId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    console.error('[DB] Error getting sprint by id:', error.message);
+    return { data: null, error };
+  }
+  return { data: data || null, error: null };
+}
+
+module.exports = { createSprint, getActiveSprint, getActiveSprints, getSprintById, completeSprint, updateSprintGoal };

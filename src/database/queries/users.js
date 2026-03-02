@@ -45,4 +45,11 @@ async function getUserByTelegramId(telegramId) {
   return { data: data || null, error: null };
 }
 
-module.exports = { findOrCreateUser, getUserByTelegramId };
+async function touchUserActivity(userId) {
+  await supabase
+    .from('users')
+    .update({ last_active_at: new Date().toISOString() })
+    .eq('id', userId);
+}
+
+module.exports = { findOrCreateUser, getUserByTelegramId, touchUserActivity };
