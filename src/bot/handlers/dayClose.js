@@ -27,15 +27,15 @@ function registerDayCloseHandlers(bot) {
   });
 
   // Отметка задачи как выполненной
-  bot.action(/^dayclose_done_(\d+)$/, async (ctx) => {
+  bot.action(/^dayclose_done_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('✅');
-    await handleTaskStatus(ctx, parseInt(ctx.match[1]), 'done');
+    await handleTaskStatus(ctx, ctx.match[1], 'done');
   });
 
   // Отметка задачи как пропущенной
-  bot.action(/^dayclose_skip_(\d+)$/, async (ctx) => {
+  bot.action(/^dayclose_skip_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('⏭');
-    await handleTaskStatus(ctx, parseInt(ctx.match[1]), 'skipped');
+    await handleTaskStatus(ctx, ctx.match[1], 'skipped');
   });
 
   // Показать итоги после отметки всех задач
