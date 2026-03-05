@@ -99,8 +99,8 @@ function registerSprintsHandlers(bot) {
 
   // --- Редактирование спринта ---
 
-  // Меню редактирования спринта
-  bot.action(/^edit_sprint_(.+)$/, async (ctx) => {
+  // Меню редактирования спринта (только UUID без подчёркиваний, иначе захватит edit_sprint_goal_/inits_/fin_/sfi_)
+  bot.action(/^edit_sprint_([^_]+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const sprintId = ctx.match[1];

@@ -20,24 +20,59 @@ function formatTodayList(items) {
     return '📋 На сегодня задач нет.\n\nИспользуйте кнопку *«📋 Добавить задачи»* чтобы запланировать день.';
   }
 
-  const sorted = sortItems(items);
   let text = '📋 *План на сегодня:*\n\n';
-  sorted.forEach((item, i) => {
-    const statusIcon =
-      item.status === 'done' ? '✅' :
-      item.status === 'skipped' ? '⏭' : '⬜';
-    const keyTag = item.is_key_task ? ' ⭐' : '';
-    const tag = item.initiative ? ` _[${item.initiative.title}]_` : '';
-    text += `${i + 1}. ${statusIcon} ${item.text_raw}${keyTag}${tag}\n`;
+  let num = 1;
+
+  // Группируем: по инициативам, по стратегии без инициативы, вне стратегии
+  const byInitiative = {};
+  const strategicItems = [];
+  const fireItems = [];
+
+  sortItems(items).forEach((item) => {
+    if (item.initiative) {
+      const title = item.initiative.title;
+      if (!byInitiative[title]) byInitiative[title] = [];
+      byInitiative[title].push(item);
+    } else if (item.is_strategic) {
+      strategicItems.push(item);
+    } else {
+      fireItems.push(item);
+    }
   });
+
+  const hasStrategic = Object.keys(byInitiative).length > 0 || strategicItems.length > 0;
+
+  for (const [title, groupItems] of Object.entries(byInitiative)) {
+    text += `📌 *${title}:*\n`;
+    for (const item of groupItems) {
+      const icon = item.status === 'done' ? '✅' : item.status === 'skipped' ? '⏭' : '⬜';
+      text += `  ${num}. ${icon} ${item.text_raw}${item.is_key_task ? ' ⭐' : ''}\n`;
+      num++;
+    }
+  }
+
+  if (strategicItems.length > 0) {
+    text += `📊 *По стратегии:*\n`;
+    for (const item of strategicItems) {
+      const icon = item.status === 'done' ? '✅' : item.status === 'skipped' ? '⏭' : '⬜';
+      text += `  ${num}. ${icon} ${item.text_raw}${item.is_key_task ? ' ⭐' : ''}\n`;
+      num++;
+    }
+  }
+
+  if (fireItems.length > 0) {
+    if (hasStrategic) text += `\n🔥 *Вне стратегии:*\n`;
+    for (const item of fireItems) {
+      const icon = item.status === 'done' ? '✅' : item.status === 'skipped' ? '⏭' : '⬜';
+      text += `  ${num}. ${icon} ${item.text_raw}${item.is_key_task ? ' ⭐' : ''}\n`;
+      num++;
+    }
+  }
 
   const done = items.filter((i) => i.status === 'done').length;
   const total = items.length;
   text += `\n✅ Выполнено: ${done}/${total}`;
-
-  if (done === total && total > 0) {
-    text += ' 🎉';
-  }
+  if (done === total && total > 0) text += ' 🎉';
 
   return text;
 }

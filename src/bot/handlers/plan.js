@@ -1,6 +1,7 @@
 const { Markup } = require('telegraf');
 const { getUserByTelegramId, checkHintAndMark } = require('../../database/queries/users');
-const { getActiveSprints } = require('../../database/queries/sprints');
+const { getActiveSprints, getSprintById } = require('../../database/queries/sprints');
+const { getPlanItemById } = require('../../database/queries/planItems');
 const { addDayPlanForDate, getTodayPlan, getPlanForDate, formatPlanMessages, getTodayDate, parseDateInput, formatDateRu } = require('../../services/planning');
 const { escapeMarkdown, persistentKeyboard, KEYBOARD_BUTTONS, buildDatePickerKeyboard } = require('../../utils/keyboards');
 
@@ -23,8 +24,8 @@ function registerPlanHandlers(bot) {
       const showHint = await checkHintAndMark(user.id, 'hint_first_plan');
       if (showHint) {
         await ctx.reply(
-          '💡 *Подсказка:* Привяжите задачи к направлениям спринта — они засчитаются как стратегические. ' +
-          'SFI показывает долю стратегических задач среди выполненных. Стремитесь к 70%+!',
+          '💡 *Подсказка:*\nПривяжите задачи к направлениям спринта — они зачтутся как стратегические.\n' +
+          'SFI = доля стратегических задач среди выполненных. Цель: *70%+*',
           { parse_mode: 'Markdown' }
         );
       }
@@ -298,8 +299,8 @@ function registerPlanHandlers(bot) {
       const sprintId = ctx.match[1];
       const itemId = ctx.match[2];
 
-      const sprints = ctx.session?.qualificationSprints || [];
-      const sprint = sprints.find((s) => String(s.id) === sprintId);
+      // Fetch from DB — не полагаемся на сессию (serverless теряет её между запросами)
+      const { data: sprint } = await getSprintById(sprintId);
       if (!sprint) {
         await ctx.reply('Спринт не найден. Попробуйте ещё раз.');
         return;
@@ -309,20 +310,16 @@ function registerPlanHandlers(bot) {
       const initiatives = sprint.initiatives || [];
       ctx.session.qualificationInitiatives = initiatives;
 
-      const items = ctx.session?.qualificationItems || [];
-      const idx = ctx.session?.qualificationIndex || 0;
-      const item = items[idx];
+      const { data: item } = await getPlanItemById(itemId);
 
       await ctx.editMessageText(`🎯 Спринт выбран: ${sprint.goal_text}`);
 
       if (initiatives.length === 0) {
-        // Нет инициатив — сразу стратегическая задача без инициативы
         const { updatePlanItem } = require('../../database/queries/planItems');
-        await updatePlanItem(item.id, { initiative_id: null, is_strategic: true });
-
-        await askKeyTaskQuestion(ctx, item);
+        await updatePlanItem(itemId, { initiative_id: null, is_strategic: true });
+        await askKeyTaskQuestion(ctx, item || { id: itemId, text_raw: '' });
       } else {
-        await sendQualificationQuestion(ctx, item, initiatives);
+        await sendQualificationQuestion(ctx, item || { id: itemId, text_raw: '' }, initiatives);
       }
     } catch (error) {
       console.error('[QUALIFY] Sprint select error:', error.message);
@@ -340,15 +337,15 @@ function registerPlanHandlers(bot) {
       const { updatePlanItem } = require('../../database/queries/planItems');
       await updatePlanItem(itemId, { initiative_id: initiativeId, is_strategic: true });
 
-      const items = ctx.session?.qualificationItems || [];
       const initiatives = ctx.session?.qualificationInitiatives || [];
-      const currentIdx = ctx.session?.qualificationIndex || 0;
-
       const initiative = initiatives.find((i) => String(i.id) === initiativeId);
       const label = initiative ? `🎯 ${initiative.title}` : '📊 По стратегии';
-      await ctx.editMessageText(`${label}: ${items[currentIdx].text_raw}`);
 
-      await askKeyTaskQuestion(ctx, items[currentIdx]);
+      const { data: item } = await getPlanItemById(itemId);
+      const itemText = item?.text_raw || '';
+      await ctx.editMessageText(`${label}: ${itemText}`);
+
+      await askKeyTaskQuestion(ctx, item || { id: itemId, text_raw: itemText });
     } catch (error) {
       console.error('[QUALIFY] Error:', error.message);
       await ctx.reply('Ошибка при квалификации задачи.');
@@ -364,12 +361,11 @@ function registerPlanHandlers(bot) {
       const { updatePlanItem } = require('../../database/queries/planItems');
       await updatePlanItem(itemId, { initiative_id: null, is_strategic: false });
 
-      const items = ctx.session?.qualificationItems || [];
-      const currentIdx = ctx.session?.qualificationIndex || 0;
+      const { data: item } = await getPlanItemById(itemId);
+      const itemText = item?.text_raw || '';
+      await ctx.editMessageText(`🔥 Вне стратегии: ${itemText}`);
 
-      await ctx.editMessageText(`🔥 Вне стратегии: ${items[currentIdx].text_raw}`);
-
-      await askKeyTaskQuestion(ctx, items[currentIdx]);
+      await askKeyTaskQuestion(ctx, item || { id: itemId, text_raw: itemText });
     } catch (error) {
       console.error('[QUALIFY] Error:', error.message);
       await ctx.reply('Ошибка при квалификации задачи.');
@@ -607,7 +603,7 @@ async function getSprintContext(userId) {
     text += `🎯 *Спринт:* ${escapeMarkdown(sprint.goal_text)}\n`;
     const initiatives = sprint.initiatives || [];
     if (initiatives.length > 0) {
-      text += '*Инициативы:*\n';
+      text += '*Направления:*\n';
       initiatives.forEach((init, i) => {
         text += `  ${i + 1}\\. ${escapeMarkdown(init.title)}\n`;
       });
@@ -737,6 +733,10 @@ async function advanceToNextQualification(ctx) {
 }
 
 async function askKeyTaskQuestion(ctx, item) {
+  if (!item) {
+    await advanceToNextQualification(ctx);
+    return;
+  }
   if (ctx.session.qualificationKeyTaskSet) {
     await advanceToNextQualification(ctx);
     return;
@@ -780,8 +780,9 @@ async function finishQualification(ctx) {
   const showHint = await checkHintAndMark(user.id, 'hint_first_qualify');
   if (showHint) {
     await ctx.reply(
-      '💡 *SFI* — Strategic Focus Index: процент стратегических задач среди выполненных. ' +
-      'Чем выше SFI, тем больше вы работаете над целями, а не текучкой. Стремитесь к 70%+.',
+      '💡 *SFI — Strategic Focus Index*\n' +
+      'Доля выполненных задач, связанных с направлениями спринта.\n' +
+      'Цель: *70%+* — работа над главным, а не текучкой.',
       { parse_mode: 'Markdown' }
     );
   }
