@@ -2,6 +2,9 @@ const { Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
 const { getPlanItemsByDate, updatePlanItem } = require('../../database/queries/planItems');
 const { getTodayDate } = require('../../services/planning');
+const { getActiveSprint } = require('../../database/queries/sprints');
+const { getStreakInfo } = require('../../services/streak');
+const { getDayStats, formatSprintProgressBar } = require('../../services/analytics');
 
 function formatTodayList(items) {
   if (items.length === 0) {
@@ -74,16 +77,9 @@ function registerTodayHandlers(bot) {
       }
 
       await updatePlanItem(pending.id, { status: 'done' });
-
-      const preview = pending.text_raw.length > 50
-        ? pending.text_raw.slice(0, 47) + '…'
-        : pending.text_raw;
-
-      await ctx.reply(
-        `✅ Выполнено: *${preview}*\n\nОтправь /today чтобы увидеть весь план.`,
-        { parse_mode: 'Markdown' }
-      );
       console.log(`[TODAY] /done: task ${pending.id} marked done for user ${user.id}`);
+
+      await showToday(ctx);
     } catch (error) {
       console.error('[TODAY] /done error:', error.message);
       await ctx.reply('Ошибка при обновлении задачи.');
@@ -112,9 +108,25 @@ async function showToday(ctx) {
     }
 
     const date = getTodayDate();
-    const { data: items } = await getPlanItemsByDate(user.id, date);
+    const [{ data: items }, { data: sprint }, streak, stats] = await Promise.all([
+      getPlanItemsByDate(user.id, date),
+      getActiveSprint(user.id),
+      getStreakInfo(user.id),
+      getDayStats(user.id, date),
+    ]);
 
-    const text = formatTodayList(items);
+    let header = '';
+    if (sprint) {
+      const sfi = stats && stats.done > 0 ? stats.sfi : null;
+      header += `🎯 *${sprint.goal_text}*\n`;
+      header += formatSprintProgressBar(sprint, sfi) + '\n';
+    }
+    if (streak.current >= 2) {
+      header += `🔥 Стрик: ${streak.current} дн.\n`;
+    }
+    if (header) header += '\n';
+
+    const text = header + formatTodayList(items);
     const keyboard = buildTodayKeyboard(items);
 
     const options = { parse_mode: 'Markdown' };
