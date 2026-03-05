@@ -6,18 +6,28 @@ const { getActiveSprint } = require('../../database/queries/sprints');
 const { getStreakInfo } = require('../../services/streak');
 const { getDayStats, formatSprintProgressBar } = require('../../services/analytics');
 
+function sortItems(items) {
+  return [...items].sort((a, b) => {
+    if (a.is_key_task && !b.is_key_task) return -1;
+    if (!a.is_key_task && b.is_key_task) return 1;
+    return 0;
+  });
+}
+
 function formatTodayList(items) {
   if (items.length === 0) {
     return '📋 На сегодня задач нет.\n\nИспользуйте кнопку *«📋 Добавить задачи»* чтобы запланировать день.';
   }
 
+  const sorted = sortItems(items);
   let text = '📋 *План на сегодня:*\n\n';
-  items.forEach((item, i) => {
+  sorted.forEach((item, i) => {
     const statusIcon =
       item.status === 'done' ? '✅' :
       item.status === 'skipped' ? '⏭' : '⬜';
+    const keyTag = item.is_key_task ? ' ⭐' : '';
     const tag = item.initiative ? ` _[${item.initiative.title}]_` : '';
-    text += `${i + 1}. ${statusIcon} ${item.text_raw}${tag}\n`;
+    text += `${i + 1}. ${statusIcon} ${item.text_raw}${keyTag}${tag}\n`;
   });
 
   const done = items.filter((i) => i.status === 'done').length;
@@ -32,7 +42,7 @@ function formatTodayList(items) {
 }
 
 function buildTodayKeyboard(items) {
-  const pendingItems = items.filter((i) => i.status === 'pending');
+  const pendingItems = sortItems(items).filter((i) => i.status === 'pending');
   if (pendingItems.length === 0) return null;
 
   const buttons = pendingItems.map((item) => {

@@ -25,7 +25,7 @@
 ---
 
 ### Stage 3: Задача дня (is_key_task)
-**Status:** [ ] Not started
+**Status:** [x] Done
 **Files:** `src/bot/handlers/plan.js`, `src/bot/handlers/today.js`
 
 - После квалификации (strategic/fire) бот спрашивает: "Это задача дня?" (Да / Нет)
@@ -109,7 +109,7 @@
 |-------|-------------|--------|
 | 1 | /today + /done улучшения | [x] |
 | 2 | Датапикер 3 кнопки | [x] |
-| 3 | Задача дня (is_key_task) | [ ] |
+| 3 | Задача дня (is_key_task) | [x] |
 | 4 | Квалификация через editMessage | [ ] |
 | 5 | Контекст в шапке | [ ] |
 | 6 | Устаревшие задачи | [ ] |

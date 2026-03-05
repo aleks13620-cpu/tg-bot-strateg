@@ -135,6 +135,7 @@ function registerPlanHandlers(bot) {
         ctx.session.qualificationSprints = sprints;
         ctx.session.qualificationSelectedSprint = null;
         ctx.session.qualificationInitiatives = [];
+        ctx.session.qualificationKeyTaskSet = false;
         ctx.session.qualificationDate = dateParam;
         await ctx.reply(`✅ Задача на ${dateLabel}:\n"${text}"\n\nКвалифицируем:`);
         await startQualificationForItem(ctx, items[0], sprints);
@@ -222,6 +223,7 @@ function registerPlanHandlers(bot) {
           ctx.session.qualificationSprints = sprints;
           ctx.session.qualificationSelectedSprint = null;
           ctx.session.qualificationInitiatives = [];
+          ctx.session.qualificationKeyTaskSet = false;
           ctx.session.qualificationDate = iso;
           await ctx.reply(`✅ Задача на ${dateLabel}:\n"${text}"\n\nКвалифицируем:`);
           await startQualificationForItem(ctx, items[0], sprints);
@@ -266,6 +268,7 @@ function registerPlanHandlers(bot) {
       ctx.session.qualificationSprints = sprints;
       ctx.session.qualificationSelectedSprint = null;
       ctx.session.qualificationInitiatives = [];
+      ctx.session.qualificationKeyTaskSet = false;
 
       await ctx.reply(`✅ Добавлено задач: ${items.length} на ${formatDateRu(date)}\n\nТеперь квалифицируем каждую задачу:`);
       await startQualificationForItem(ctx, items[0], sprints);
@@ -304,15 +307,7 @@ function registerPlanHandlers(bot) {
         const { updatePlanItem } = require('../../database/queries/planItems');
         await updatePlanItem(item.id, { initiative_id: null, is_strategic: true });
 
-        const nextIdx = idx + 1;
-        ctx.session.qualificationIndex = nextIdx;
-        await ctx.reply(`📊 В спринт (без инициатив): ${item.text_raw}`);
-
-        if (nextIdx < items.length) {
-          await startQualificationForItem(ctx, items[nextIdx], sprints);
-        } else {
-          await finishQualification(ctx);
-        }
+        await askKeyTaskQuestion(ctx, item);
       } else {
         await sendQualificationQuestion(ctx, item, initiatives);
       }
@@ -333,20 +328,14 @@ function registerPlanHandlers(bot) {
       await updatePlanItem(itemId, { initiative_id: initiativeId, is_strategic: true });
 
       const items = ctx.session?.qualificationItems || [];
-      const sprints = ctx.session?.qualificationSprints || [];
       const initiatives = ctx.session?.qualificationInitiatives || [];
-      const idx = (ctx.session?.qualificationIndex || 0) + 1;
-      ctx.session.qualificationIndex = idx;
+      const currentIdx = ctx.session?.qualificationIndex || 0;
 
       const initiative = initiatives.find((i) => String(i.id) === initiativeId);
       const label = initiative ? `🎯 ${initiative.title}` : '📊 По стратегии';
-      await ctx.editMessageText(`${label}: ${items[idx - 1].text_raw}`);
+      await ctx.editMessageText(`${label}: ${items[currentIdx].text_raw}`);
 
-      if (idx < items.length) {
-        await startQualificationForItem(ctx, items[idx], sprints);
-      } else {
-        await finishQualification(ctx);
-      }
+      await askKeyTaskQuestion(ctx, items[currentIdx]);
     } catch (error) {
       console.error('[QUALIFY] Error:', error.message);
       await ctx.reply('Ошибка при квалификации задачи.');
@@ -363,17 +352,11 @@ function registerPlanHandlers(bot) {
       await updatePlanItem(itemId, { initiative_id: null, is_strategic: false });
 
       const items = ctx.session?.qualificationItems || [];
-      const sprints = ctx.session?.qualificationSprints || [];
-      const idx = (ctx.session?.qualificationIndex || 0) + 1;
-      ctx.session.qualificationIndex = idx;
+      const currentIdx = ctx.session?.qualificationIndex || 0;
 
-      await ctx.editMessageText(`🔥 Вне стратегии: ${items[idx - 1].text_raw}`);
+      await ctx.editMessageText(`🔥 Вне стратегии: ${items[currentIdx].text_raw}`);
 
-      if (idx < items.length) {
-        await startQualificationForItem(ctx, items[idx], sprints);
-      } else {
-        await finishQualification(ctx);
-      }
+      await askKeyTaskQuestion(ctx, items[currentIdx]);
     } catch (error) {
       console.error('[QUALIFY] Error:', error.message);
       await ctx.reply('Ошибка при квалификации задачи.');
@@ -538,6 +521,32 @@ function registerPlanHandlers(bot) {
       await ctx.reply('Ошибка.');
     }
   });
+
+  // Задача дня: да
+  bot.action(/^key_task_yes_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery('⭐');
+    try {
+      const itemId = ctx.match[1];
+      const { updatePlanItem } = require('../../database/queries/planItems');
+      await updatePlanItem(itemId, { is_key_task: true });
+      ctx.session.qualificationKeyTaskSet = true;
+      await ctx.editMessageText('⭐ Задача дня!');
+      await advanceToNextQualification(ctx);
+    } catch (error) {
+      console.error('[PLAN] Key task yes error:', error.message);
+    }
+  });
+
+  // Задача дня: нет
+  bot.action(/^key_task_no_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      await ctx.editMessageText('Ок');
+      await advanceToNextQualification(ctx);
+    } catch (error) {
+      console.error('[PLAN] Key task no error:', error.message);
+    }
+  });
 }
 
 // Отправка плана несколькими сообщениями (по одному на спринт)
@@ -639,16 +648,8 @@ async function startQualificationForItem(ctx, item, sprints) {
       const { updatePlanItem } = require('../../database/queries/planItems');
       await updatePlanItem(item.id, { initiative_id: null, is_strategic: true });
 
-      const items = ctx.session?.qualificationItems || [];
-      const idx = (ctx.session?.qualificationIndex || 0) + 1;
-      ctx.session.qualificationIndex = idx;
       await ctx.reply(`📊 В спринт (без инициатив): ${item.text_raw}`);
-
-      if (idx < items.length) {
-        await startQualificationForItem(ctx, items[idx], sprints);
-      } else {
-        await finishQualification(ctx);
-      }
+      await askKeyTaskQuestion(ctx, item);
       return;
     }
 
@@ -671,6 +672,39 @@ async function startQualificationForItem(ctx, item, sprints) {
   );
 }
 
+async function advanceToNextQualification(ctx) {
+  const items = ctx.session?.qualificationItems || [];
+  const sprints = ctx.session?.qualificationSprints || [];
+  const idx = (ctx.session?.qualificationIndex || 0) + 1;
+  ctx.session.qualificationIndex = idx;
+
+  if (idx < items.length) {
+    await startQualificationForItem(ctx, items[idx], sprints);
+  } else {
+    await finishQualification(ctx);
+  }
+}
+
+async function askKeyTaskQuestion(ctx, item) {
+  if (ctx.session.qualificationKeyTaskSet) {
+    await advanceToNextQualification(ctx);
+    return;
+  }
+
+  await ctx.reply(
+    `⭐ Сделать задачей дня?\n_${item.text_raw}_`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback('⭐ Да', `key_task_yes_${item.id}`),
+          Markup.button.callback('Нет', `key_task_no_${item.id}`),
+        ],
+      ]),
+    }
+  );
+}
+
 async function finishQualification(ctx) {
   const date = ctx.session.qualificationDate || getTodayDate();
 
@@ -681,6 +715,7 @@ async function finishQualification(ctx) {
   ctx.session.qualificationSelectedSprint = null;
   ctx.session.qualificationDate = null;
   ctx.session.requalifySprints = null;
+  ctx.session.qualificationKeyTaskSet = null;
 
   const { data: user } = await getUserByTelegramId(ctx.from.id);
   const { data: updatedItems } = await getPlanForDate(user.id, date);
