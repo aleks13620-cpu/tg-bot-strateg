@@ -607,6 +607,25 @@ async function getSprintContext(userId) {
   return text;
 }
 
+// Шапка с прогрессом и контекстом спринта для qualification-сообщений
+function buildQualificationHeader(ctx) {
+  const items = ctx.session?.qualificationItems || [];
+  const idx = ctx.session?.qualificationIndex || 0;
+  const sprint = ctx.session?.qualificationSelectedSprint;
+
+  const parts = [];
+  if (items.length > 1) {
+    parts.push(`📋 Задача ${idx + 1}/${items.length}`);
+  }
+  if (sprint) {
+    const name = sprint.goal_text.length > 35
+      ? sprint.goal_text.slice(0, 35) + '…'
+      : sprint.goal_text;
+    parts.push(`🎯 ${name}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') + '\n\n' : '';
+}
+
 // Редактирует сохранённое сообщение квалификации или создаёт новое (и сохраняет message_id)
 async function editOrReplyQualification(ctx, text, opts) {
   const msgId = ctx.session.qualificationMessageId;
@@ -637,9 +656,10 @@ async function sendQualificationQuestion(ctx, item, initiatives) {
     Markup.button.callback('🔥 Вне стратегии', `qualify_fire_${item.id}`),
   ]);
 
+  const header = buildQualificationHeader(ctx);
   await editOrReplyQualification(
     ctx,
-    `Задача: *${item.text_raw}*\n\nК какой инициативе относится?`,
+    `${header}Задача: *${item.text_raw}*\n\nК какой инициативе относится?`,
     { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }
   );
 }
@@ -647,9 +667,10 @@ async function sendQualificationQuestion(ctx, item, initiatives) {
 // Запускает квалификацию для одной задачи с учётом числа спринтов
 async function startQualificationForItem(ctx, item, sprints) {
   if (!sprints || sprints.length === 0) {
+    const header = buildQualificationHeader(ctx);
     await editOrReplyQualification(
       ctx,
-      `Задача: *${item.text_raw}*\n\nК какой инициативе относится?`,
+      `${header}Задача: *${item.text_raw}*\n\nК какой инициативе относится?`,
       { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[
         Markup.button.callback('🔥 Вне стратегии', `qualify_fire_${item.id}`),
       ]]) }
@@ -684,9 +705,10 @@ async function startQualificationForItem(ctx, item, sprints) {
   ]);
   buttons.push([Markup.button.callback('🔥 Вне стратегии', `qualify_fire_${item.id}`)]);
 
+  const header = buildQualificationHeader(ctx);
   await editOrReplyQualification(
     ctx,
-    `Задача: *${item.text_raw}*\n\nВ какой спринт?`,
+    `${header}Задача: *${item.text_raw}*\n\nВ какой спринт?`,
     { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }
   );
 }
@@ -710,9 +732,10 @@ async function askKeyTaskQuestion(ctx, item) {
     return;
   }
 
+  const header = buildQualificationHeader(ctx);
   await editOrReplyQualification(
     ctx,
-    `⭐ Сделать задачей дня?\n_${item.text_raw}_`,
+    `${header}⭐ Сделать задачей дня?\n_${item.text_raw}_`,
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
