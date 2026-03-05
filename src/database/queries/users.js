@@ -52,4 +52,29 @@ async function touchUserActivity(userId) {
     .eq('id', userId);
 }
 
-module.exports = { findOrCreateUser, getUserByTelegramId, touchUserActivity };
+/**
+ * Проверяет, была ли подсказка уже показана.
+ * Если нет — помечает как показанную (fire & forget) и возвращает true.
+ * Если уже показана — возвращает false.
+ */
+async function checkHintAndMark(userId, key) {
+  const { data } = await supabase
+    .from('users')
+    .select('meta')
+    .eq('id', userId)
+    .single();
+
+  const meta = data?.meta || {};
+  if (meta[key]) return false;
+
+  // Помечаем как показанную (fire & forget — не блокируем ответ)
+  supabase
+    .from('users')
+    .update({ meta: { ...meta, [key]: true } })
+    .eq('id', userId)
+    .then(() => {});
+
+  return true;
+}
+
+module.exports = { findOrCreateUser, getUserByTelegramId, touchUserActivity, checkHintAndMark };

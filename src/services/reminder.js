@@ -5,6 +5,7 @@ const { getPlanItemsByDateRange, getPlanItemsByDate, getStaleItems } = require('
 const { getActiveSprint } = require('../database/queries/sprints');
 const { getStreakInfo } = require('./streak');
 const { getWeekStats, formatWeekStats, formatSprintProgressBar, getDayStats } = require('./analytics');
+const { checkHintAndMark } = require('../database/queries/users');
 
 async function getAllActiveUsers() {
   const { data, error } = await supabase
@@ -103,6 +104,15 @@ async function getMorningMessage(userId) {
   if (sprint) {
     text += `🎯 *${sprint.goal_text}*\n`;
     text += formatSprintProgressBar(sprint) + '\n\n';
+  }
+
+  // Подсказка: нет активного спринта (показывается один раз)
+  if (!sprint) {
+    const showHint = await checkHintAndMark(userId, 'hint_no_sprint');
+    if (showHint) {
+      text += '\n💡 *Подсказка:* У вас нет активного спринта. Создайте его в меню *"🎯 Спринты"* — ' +
+        'это даст фокус и контекст для каждого дня.\n';
+    }
   }
 
   if (!status.hasPlan) {

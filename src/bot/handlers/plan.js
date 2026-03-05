@@ -1,5 +1,5 @@
 const { Markup } = require('telegraf');
-const { getUserByTelegramId } = require('../../database/queries/users');
+const { getUserByTelegramId, checkHintAndMark } = require('../../database/queries/users');
 const { getActiveSprints } = require('../../database/queries/sprints');
 const { addDayPlanForDate, getTodayPlan, getPlanForDate, formatPlanMessages, getTodayDate, parseDateInput, formatDateRu } = require('../../services/planning');
 const { escapeMarkdown, persistentKeyboard, KEYBOARD_BUTTONS, buildDatePickerKeyboard } = require('../../utils/keyboards');
@@ -18,6 +18,16 @@ function registerPlanHandlers(bot) {
         sprintContext + '📅 На какую дату добавить задачи?',
         { parse_mode: 'Markdown', ...buildDatePickerKeyboard(14) }
       );
+
+      // Подсказка: первое использование /plan
+      const showHint = await checkHintAndMark(user.id, 'hint_first_plan');
+      if (showHint) {
+        await ctx.reply(
+          '💡 *Подсказка:* Привяжите задачи к направлениям спринта — они засчитаются как стратегические. ' +
+          'SFI показывает долю стратегических задач среди выполненных. Стремитесь к 70%+!',
+          { parse_mode: 'Markdown' }
+        );
+      }
     } catch (error) {
       console.error('[PLAN] Error from reply keyboard:', error.message);
       await ctx.reply('Ошибка при загрузке плана.');
@@ -765,6 +775,16 @@ async function finishQualification(ctx) {
   const { data: updatedItems } = await getPlanForDate(user.id, date);
   await ctx.reply('✅ Квалификация завершена!');
   await sendPlanMessages(ctx, updatedItems, { buttons: persistentKeyboard, date });
+
+  // Подсказка: первая квалификация задач
+  const showHint = await checkHintAndMark(user.id, 'hint_first_qualify');
+  if (showHint) {
+    await ctx.reply(
+      '💡 *SFI* — Strategic Focus Index: процент стратегических задач среди выполненных. ' +
+      'Чем выше SFI, тем больше вы работаете над целями, а не текучкой. Стремитесь к 70%+.',
+      { parse_mode: 'Markdown' }
+    );
+  }
 }
 
 module.exports = { registerPlanHandlers, sendPlanMessages };

@@ -1,5 +1,5 @@
 const { Markup } = require('telegraf');
-const { getUserByTelegramId } = require('../../database/queries/users');
+const { getUserByTelegramId, checkHintAndMark } = require('../../database/queries/users');
 const { getPlanItemsByDate, updatePlanItem, createPlanItemsWithDetails } = require('../../database/queries/planItems');
 const { getActiveSprint } = require('../../database/queries/sprints');
 const { getDayStats, formatDayStats } = require('../../services/analytics');
@@ -65,6 +65,17 @@ function registerDayCloseHandlers(bot) {
       if (winMsg) summaryText += `\n\n${winMsg}`;
 
       await ctx.reply(summaryText, { parse_mode: 'Markdown' });
+
+      // Подсказка: первое закрытие дня
+      const showHint = await checkHintAndMark(user.id, 'hint_first_dayclose');
+      if (showHint) {
+        await ctx.reply(
+          '💡 *Подсказка:* Стрик — дни подряд с закрытым днём. ' +
+          'Закрывайте день каждый вечер, чтобы стрик рос! ' +
+          'Ваш рекорд хранится в разделе /progress.',
+          { parse_mode: 'Markdown' }
+        );
+      }
 
       // Проверяем skipped задачи для переноса
       const { data: items } = await getPlanItemsByDate(user.id, date);
