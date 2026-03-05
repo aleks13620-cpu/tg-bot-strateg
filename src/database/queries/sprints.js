@@ -84,6 +84,20 @@ async function updateSprintGoal(sprintId, goalText) {
   return { data, error };
 }
 
+async function updateSprintFinancialGoal(sprintId, financialGoal) {
+  const { data, error } = await supabase
+    .from('sprints')
+    .update({ financial_goal: financialGoal })
+    .eq('id', sprintId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[DB] Error updating sprint financial goal:', error.message);
+  }
+  return { data, error };
+}
+
 async function getSprintById(sprintId) {
   const { data, error } = await supabase
     .from('sprints')
@@ -98,4 +112,4 @@ async function getSprintById(sprintId) {
   return { data: data || null, error: null };
 }
 
-module.exports = { createSprint, getActiveSprint, getActiveSprints, getSprintById, completeSprint, updateSprintGoal };
+module.exports = { createSprint, getActiveSprint, getActiveSprints, getSprintById, completeSprint, updateSprintGoal, updateSprintFinancialGoal };

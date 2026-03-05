@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
-const { getActiveSprints, getSprintById, completeSprint, updateSprintGoal } = require('../../database/queries/sprints');
+const { getActiveSprints, getSprintById, completeSprint, updateSprintGoal, updateSprintFinancialGoal } = require('../../database/queries/sprints');
 const { createInitiative, getInitiativesBySprint, updateInitiativeTitle, deleteInitiative } = require('../../database/queries/initiatives');
 const { formatSprintCompact, formatSprintCompletionCard } = require('../../services/sprint');
 const { getSprintStats } = require('../../services/analytics');
@@ -100,10 +100,10 @@ function registerSprintsHandlers(bot) {
   // --- Редактирование спринта ---
 
   // Меню редактирования спринта
-  bot.action(/^edit_sprint_(\d+)$/, async (ctx) => {
+  bot.action(/^edit_sprint_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const sprintId = parseInt(ctx.match[1]);
+      const sprintId = ctx.match[1];
       await ctx.reply(
         '✏️ *Что хотите изменить?*',
         {
@@ -111,6 +111,7 @@ function registerSprintsHandlers(bot) {
           ...Markup.inlineKeyboard([
             [Markup.button.callback('📝 Изменить цель', `edit_sprint_goal_${sprintId}`)],
             [Markup.button.callback('📋 Редактировать инициативы', `edit_sprint_inits_${sprintId}`)],
+            [Markup.button.callback('💰 Изменить финцель', `edit_sprint_fin_${sprintId}`)],
           ]),
         }
       );
@@ -121,10 +122,10 @@ function registerSprintsHandlers(bot) {
   });
 
   // Изменение цели спринта — запрос нового текста
-  bot.action(/^edit_sprint_goal_(\d+)$/, async (ctx) => {
+  bot.action(/^edit_sprint_goal_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const sprintId = parseInt(ctx.match[1]);
+      const sprintId = ctx.match[1];
       ctx.session.awaitingSprintGoalEdit = sprintId;
       await ctx.reply('📝 Напишите новую цель спринта:');
     } catch (error) {
@@ -133,11 +134,51 @@ function registerSprintsHandlers(bot) {
     }
   });
 
-  // Показать список инициатив для редактирования
-  bot.action(/^edit_sprint_inits_(\d+)$/, async (ctx) => {
+  // Изменение финансовой цели спринта
+  bot.action(/^edit_sprint_fin_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const sprintId = parseInt(ctx.match[1]);
+      const sprintId = ctx.match[1];
+      ctx.session.awaitingSprintFinEdit = sprintId;
+      await ctx.reply(
+        '💰 Напишите финансовую цель спринта или очистите её:',
+        Markup.inlineKeyboard([
+          [Markup.button.callback('🗑 Убрать финцель', `clear_sprint_fin_${sprintId}`)],
+          [Markup.button.callback('❌ Отмена', 'cancel_sprint_fin_edit')],
+        ])
+      );
+    } catch (error) {
+      console.error('[SPRINTS] Edit fin goal prompt error:', error.message);
+      await ctx.reply('Ошибка.');
+    }
+  });
+
+  // Очистить финансовую цель
+  bot.action(/^clear_sprint_fin_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const sprintId = ctx.match[1];
+      ctx.session.awaitingSprintFinEdit = null;
+      await updateSprintFinancialGoal(sprintId, null);
+      await ctx.editMessageText('✅ Финансовая цель убрана.');
+    } catch (error) {
+      console.error('[SPRINTS] Clear fin goal error:', error.message);
+      await ctx.reply('Ошибка.');
+    }
+  });
+
+  // Отмена редактирования финцели
+  bot.action('cancel_sprint_fin_edit', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (ctx.session) ctx.session.awaitingSprintFinEdit = null;
+    await ctx.editMessageText('❌ Отменено.');
+  });
+
+  // Показать список инициатив для редактирования
+  bot.action(/^edit_sprint_inits_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const sprintId = ctx.match[1];
       await showInitiativesList(ctx, sprintId);
     } catch (error) {
       console.error('[SPRINTS] Edit inits error:', error.message);
@@ -146,10 +187,10 @@ function registerSprintsHandlers(bot) {
   });
 
   // Переименование инициативы — запрос нового названия
-  bot.action(/^rename_init_(\d+)$/, async (ctx) => {
+  bot.action(/^rename_init_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const initId = parseInt(ctx.match[1]);
+      const initId = ctx.match[1];
       ctx.session.awaitingInitRename = initId;
       await ctx.reply('✏️ Напишите новое название инициативы:');
     } catch (error) {
@@ -159,11 +200,11 @@ function registerSprintsHandlers(bot) {
   });
 
   // Удаление инициативы
-  bot.action(/^delete_init_(\d+)_(\d+)$/, async (ctx) => {
+  bot.action(/^delete_init_([^_]+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const initId = parseInt(ctx.match[1]);
-      const sprintId = parseInt(ctx.match[2]);
+      const initId = ctx.match[1];
+      const sprintId = ctx.match[2];
 
       const { data: initiatives } = await getInitiativesBySprint(sprintId);
       if (initiatives.length <= 1) {
@@ -186,10 +227,10 @@ function registerSprintsHandlers(bot) {
   });
 
   // Добавление инициативы — запрос названия
-  bot.action(/^add_init_(\d+)$/, async (ctx) => {
+  bot.action(/^add_init_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const sprintId = parseInt(ctx.match[1]);
+      const sprintId = ctx.match[1];
 
       const { data: initiatives } = await getInitiativesBySprint(sprintId);
       if (initiatives.length >= 5) {
@@ -210,9 +251,30 @@ function registerSprintsHandlers(bot) {
     if (ctx.message.text.startsWith('/')) return next();
     if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
       ctx.session.awaitingSprintGoalEdit = null;
+      ctx.session.awaitingSprintFinEdit = null;
       ctx.session.awaitingInitRename = null;
       ctx.session.awaitingInitAdd = null;
       return next();
+    }
+
+    // Изменение финансовой цели спринта
+    if (ctx.session?.awaitingSprintFinEdit) {
+      const sprintId = ctx.session.awaitingSprintFinEdit;
+      ctx.session.awaitingSprintFinEdit = null;
+      try {
+        const finGoal = ctx.message.text.trim();
+        const { error } = await updateSprintFinancialGoal(sprintId, finGoal);
+        if (error) {
+          await ctx.reply('Ошибка при обновлении финансовой цели.');
+          return;
+        }
+        await ctx.reply(`✅ Финансовая цель обновлена:\n💰 ${finGoal}`, persistentKeyboard);
+        console.log(`[SPRINTS] Sprint ${sprintId} financial goal updated`);
+      } catch (error) {
+        console.error('[SPRINTS] Update fin goal error:', error.message);
+        await ctx.reply('Ошибка при обновлении финансовой цели.');
+      }
+      return;
     }
 
     // Изменение цели спринта
