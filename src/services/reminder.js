@@ -68,25 +68,41 @@ async function getUpcomingTasks(userId) {
 async function getMorningMessage(userId) {
   const date = getTodayDate();
 
-  const [status, upcoming, { data: sprint }, streak] = await Promise.all([
+  // Вычисляем вчерашнюю дату
+  const yesterdayDate = new Date();
+  yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
+  const yesterday = yesterdayDate.toISOString().split('T')[0];
+
+  const [status, upcoming, { data: sprint }, streak, { data: userData }] = await Promise.all([
     getUserDayStatus(userId),
     getUpcomingTasks(userId),
     getActiveSprint(userId),
     getStreakInfo(userId),
+    supabase.from('users').select('last_close_date').eq('id', userId).single(),
   ]);
 
+  const lastCloseDate = userData?.last_close_date || null;
+
+  // Стрик сброшен: был стрик, но вчера день не закрыт
+  const streakBroken =
+    streak.current > 0 &&
+    lastCloseDate &&
+    lastCloseDate !== yesterday &&
+    lastCloseDate !== date;
+
   let text = '☀️ *Доброе утро!*\n\n';
+
+  // Уведомление о сбросе стрика
+  if (streakBroken) {
+    text += `💔 Стрик прерван — было *${streak.current} дн.* Начни новый сегодня!\n\n`;
+  } else if (streak.current >= 2) {
+    text += `🔥 Стрик: *${streak.current} дн.* подряд! Не останавливайся!\n\n`;
+  }
 
   // Контекст спринта
   if (sprint) {
     text += `🎯 *${sprint.goal_text}*\n`;
-    // Прогресс-бар (без SFI в утреннем — данных дня ещё нет)
     text += formatSprintProgressBar(sprint) + '\n\n';
-  }
-
-  // Стрик
-  if (streak.current >= 2) {
-    text += `🔥 Стрик: ${streak.current} дн. подряд!\n\n`;
   }
 
   if (!status.hasPlan) {
@@ -95,12 +111,15 @@ async function getMorningMessage(userId) {
     text += `На сегодня: *${status.total} задач*`;
     if (status.done > 0) text += ` (выполнено ${status.done})`;
 
-    // Задача дня — первая стратегическая
+    // Задача дня: сначала is_key_task, потом первая стратегическая
     const { data: todayItems } = await getPlanItemsByDate(userId, date);
-    const keyTask = todayItems.find((i) => i.is_strategic && i.status === 'pending');
+    const keyTask =
+      todayItems.find((i) => i.is_key_task && i.status === 'pending') ||
+      todayItems.find((i) => i.is_strategic && i.status === 'pending');
     if (keyTask) {
+      const icon = keyTask.is_key_task ? '⭐' : '🎯';
       const preview = keyTask.text_raw.length > 60 ? keyTask.text_raw.slice(0, 57) + '…' : keyTask.text_raw;
-      text += `\n\n🎯 *Задача дня:*\n${preview}`;
+      text += `\n\n${icon} *Задача дня:*\n${preview}`;
     }
   }
 
