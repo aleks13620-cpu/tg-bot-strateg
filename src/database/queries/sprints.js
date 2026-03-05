@@ -98,6 +98,20 @@ async function updateSprintFinancialGoal(sprintId, financialGoal) {
   return { data, error };
 }
 
+async function updateSprintSfiChallenge(sprintId, sfiChallenge) {
+  const { data, error } = await supabase
+    .from('sprints')
+    .update({ sfi_challenge: sfiChallenge })
+    .eq('id', sprintId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[DB] Error updating sprint sfi_challenge:', error.message);
+  }
+  return { data, error };
+}
+
 async function getSprintById(sprintId) {
   const { data, error } = await supabase
     .from('sprints')
@@ -112,4 +126,4 @@ async function getSprintById(sprintId) {
   return { data: data || null, error: null };
 }
 
-module.exports = { createSprint, getActiveSprint, getActiveSprints, getSprintById, completeSprint, updateSprintGoal, updateSprintFinancialGoal };
+module.exports = { createSprint, getActiveSprint, getActiveSprints, getSprintById, completeSprint, updateSprintGoal, updateSprintFinancialGoal, updateSprintSfiChallenge };

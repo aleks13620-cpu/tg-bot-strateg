@@ -261,7 +261,8 @@ async function getWeeklyMessage(userId) {
   if (!stats || stats.totalTasks === 0) return null;
 
   const financialGoal = activeSprint?.financial_goal || null;
-  const text = formatWeekStats(stats, weekStartStr, weekEndStr, prevStats, financialGoal);
+  const sfiChallenge = activeSprint?.sfi_challenge || null;
+  const text = formatWeekStats(stats, weekStartStr, weekEndStr, prevStats, financialGoal, sfiChallenge);
 
   const buttons = [
     [Markup.button.callback('📊 Подробная аналитика', 'action_week_stats_0')],

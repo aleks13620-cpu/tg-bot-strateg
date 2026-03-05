@@ -76,7 +76,7 @@ async function getSprintStats(userId, sprintStartDate, sprintEndDate) {
   };
 }
 
-function formatDayStats(stats) {
+function formatDayStats(stats, sfiChallenge = null) {
   if (!stats || stats.total === 0) {
     return '📊 Сегодня задач не было.';
   }
@@ -95,6 +95,12 @@ function formatDayStats(stats) {
   text += `\n🎯 Стратегические (по инициативам): ${stats.strategicDone}\n`;
   text += `🔥 Оперативные (текучка): ${stats.fireDone}\n`;
   text += `\n📊 *SFI: ${stats.sfi}%*`;
+
+  if (sfiChallenge) {
+    const met = stats.sfi >= sfiChallenge;
+    text += ` / цель ${sfiChallenge}% ${met ? '✅' : '❌'}`;
+  }
+
   text += ` — стратегический фокус дня`;
 
   if (stats.sfi >= 70) text += ' 🟢';
@@ -163,7 +169,7 @@ async function getWeekStats(userId, weekStart, weekEnd) {
   };
 }
 
-function formatWeekStats(stats, weekStart, weekEnd, prevStats, financialGoal = null) {
+function formatWeekStats(stats, weekStart, weekEnd, prevStats, financialGoal = null, sfiChallenge = null) {
   const [, sm, sd] = weekStart.split('-');
   const [, em, ed] = weekEnd.split('-');
   const dateRange = `${sd}.${sm}–${ed}.${em}`;
@@ -190,7 +196,12 @@ function formatWeekStats(stats, weekStart, weekEnd, prevStats, financialGoal = n
     text += `\n\n💰 *Финансовая цель:* ${financialGoal}`;
   }
 
-  text += `\n\n📊 *SFI: ${stats.sfi}%* — стратегический фокус недели`;
+  text += `\n\n📊 *SFI: ${stats.sfi}%*`;
+  if (sfiChallenge) {
+    const met = stats.sfi >= sfiChallenge;
+    text += ` / цель ${sfiChallenge}% ${met ? '✅' : '❌'}`;
+  }
+  text += ' — стратегический фокус недели';
   if (stats.sfi >= 70) text += ' 🟢';
   else if (stats.sfi >= 50) text += ' 🟡';
   else if (stats.sfi > 0) text += ' 🔴';

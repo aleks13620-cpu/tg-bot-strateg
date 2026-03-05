@@ -1,6 +1,7 @@
 const { Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
 const { getPlanItemsByDate, updatePlanItem, createPlanItemsWithDetails } = require('../../database/queries/planItems');
+const { getActiveSprint } = require('../../database/queries/sprints');
 const { getDayStats, formatDayStats } = require('../../services/analytics');
 const { getTodayDate, getTomorrowDate, formatDateRu } = require('../../services/planning');
 const { generateCoaching } = require('../../services/coaching/simpleCoaching');
@@ -46,7 +47,10 @@ function registerDayCloseHandlers(bot) {
       if (!user) return;
 
       const date = getTodayDate();
-      const stats = await getDayStats(user.id, date);
+      const [stats, { data: activeSprint }] = await Promise.all([
+        getDayStats(user.id, date),
+        getActiveSprint(user.id),
+      ]);
 
       // Обновляем стрик если есть выполненные задачи
       let streakResult = null;
@@ -54,7 +58,7 @@ function registerDayCloseHandlers(bot) {
         streakResult = await updateStreak(user.id, date);
       }
 
-      let summaryText = formatDayStats(stats);
+      let summaryText = formatDayStats(stats, activeSprint?.sfi_challenge || null);
 
       // Маленькие победы
       const winMsg = getSmallWinMessage(streakResult, stats);

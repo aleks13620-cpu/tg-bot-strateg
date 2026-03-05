@@ -74,7 +74,7 @@
 ---
 
 ### Stage 8: SFI мини-челлендж
-**Status:** [ ] Not started
+**Status:** [x] Done
 **Files:** `src/bot/handlers/sprints.js`, `src/database/queries/sprints.js`, `src/services/analytics.js`
 
 - Поле `sfi_challenge` в таблице sprints (% цель SFI на спринт)
@@ -114,6 +114,6 @@
 | 5 | Контекст в шапке | [x] |
 | 6 | Устаревшие задачи | [x] |
 | 7 | Утреннее + сброс стрика | [x] |
-| 8 | SFI челлендж | [ ] |
+| 8 | SFI челлендж | [x] |
 | 9 | Упрощённый онбординг | [ ] |
 | 10 | Контекстные подсказки | [ ] |

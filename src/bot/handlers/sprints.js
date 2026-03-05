@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
-const { getActiveSprints, getSprintById, completeSprint, updateSprintGoal, updateSprintFinancialGoal } = require('../../database/queries/sprints');
+const { getActiveSprints, getSprintById, completeSprint, updateSprintGoal, updateSprintFinancialGoal, updateSprintSfiChallenge } = require('../../database/queries/sprints');
 const { createInitiative, getInitiativesBySprint, updateInitiativeTitle, deleteInitiative } = require('../../database/queries/initiatives');
 const { formatSprintCompact, formatSprintCompletionCard } = require('../../services/sprint');
 const { getSprintStats } = require('../../services/analytics');
@@ -112,6 +112,7 @@ function registerSprintsHandlers(bot) {
             [Markup.button.callback('📝 Изменить цель', `edit_sprint_goal_${sprintId}`)],
             [Markup.button.callback('📋 Редактировать инициативы', `edit_sprint_inits_${sprintId}`)],
             [Markup.button.callback('💰 Изменить финцель', `edit_sprint_fin_${sprintId}`)],
+            [Markup.button.callback('🏆 SFI-цель (%)', `edit_sprint_sfi_${sprintId}`)],
           ]),
         }
       );
@@ -171,6 +172,46 @@ function registerSprintsHandlers(bot) {
   bot.action('cancel_sprint_fin_edit', async (ctx) => {
     await ctx.answerCbQuery();
     if (ctx.session) ctx.session.awaitingSprintFinEdit = null;
+    await ctx.editMessageText('❌ Отменено.');
+  });
+
+  // Установить SFI-цель спринта
+  bot.action(/^edit_sprint_sfi_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const sprintId = ctx.match[1];
+      ctx.session.awaitingSprintSfiEdit = sprintId;
+      await ctx.reply(
+        '🏆 Введите целевой SFI для спринта (число от 1 до 100, например: 70):',
+        Markup.inlineKeyboard([
+          [Markup.button.callback('🗑 Убрать цель', `clear_sprint_sfi_${sprintId}`)],
+          [Markup.button.callback('❌ Отмена', 'cancel_sprint_sfi_edit')],
+        ])
+      );
+    } catch (error) {
+      console.error('[SPRINTS] Edit SFI prompt error:', error.message);
+      await ctx.reply('Ошибка.');
+    }
+  });
+
+  // Очистить SFI-цель
+  bot.action(/^clear_sprint_sfi_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const sprintId = ctx.match[1];
+      ctx.session.awaitingSprintSfiEdit = null;
+      await updateSprintSfiChallenge(sprintId, null);
+      await ctx.editMessageText('✅ SFI-цель убрана.');
+    } catch (error) {
+      console.error('[SPRINTS] Clear SFI goal error:', error.message);
+      await ctx.reply('Ошибка.');
+    }
+  });
+
+  // Отмена редактирования SFI-цели
+  bot.action('cancel_sprint_sfi_edit', async (ctx) => {
+    await ctx.answerCbQuery();
+    if (ctx.session) ctx.session.awaitingSprintSfiEdit = null;
     await ctx.editMessageText('❌ Отменено.');
   });
 
@@ -252,9 +293,35 @@ function registerSprintsHandlers(bot) {
     if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
       ctx.session.awaitingSprintGoalEdit = null;
       ctx.session.awaitingSprintFinEdit = null;
+      ctx.session.awaitingSprintSfiEdit = null;
       ctx.session.awaitingInitRename = null;
       ctx.session.awaitingInitAdd = null;
       return next();
+    }
+
+    // Установка SFI-цели спринта
+    if (ctx.session?.awaitingSprintSfiEdit) {
+      const sprintId = ctx.session.awaitingSprintSfiEdit;
+      ctx.session.awaitingSprintSfiEdit = null;
+      try {
+        const value = parseInt(ctx.message.text.trim(), 10);
+        if (isNaN(value) || value < 1 || value > 100) {
+          await ctx.reply('❌ Введите число от 1 до 100.');
+          ctx.session.awaitingSprintSfiEdit = sprintId;
+          return;
+        }
+        const { error } = await updateSprintSfiChallenge(sprintId, value);
+        if (error) {
+          await ctx.reply('Ошибка при обновлении SFI-цели.');
+          return;
+        }
+        await ctx.reply(`✅ SFI-цель установлена: *${value}%*`, { parse_mode: 'Markdown', ...persistentKeyboard });
+        console.log(`[SPRINTS] Sprint ${sprintId} sfi_challenge set to ${value}`);
+      } catch (error) {
+        console.error('[SPRINTS] Update SFI goal error:', error.message);
+        await ctx.reply('Ошибка при обновлении SFI-цели.');
+      }
+      return;
     }
 
     // Изменение финансовой цели спринта
