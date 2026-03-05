@@ -276,14 +276,14 @@ function registerPlanHandlers(bot) {
   });
 
   // Квалификация шаг 1: выбор спринта
-  bot.action(/^qualify_sprint_(\d+)_(\d+)$/, async (ctx) => {
+  bot.action(/^qualify_sprint_([^_]+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const sprintId = parseInt(ctx.match[1]);
-      const itemId = parseInt(ctx.match[2]);
+      const sprintId = ctx.match[1];
+      const itemId = ctx.match[2];
 
       const sprints = ctx.session?.qualificationSprints || [];
-      const sprint = sprints.find((s) => s.id === sprintId);
+      const sprint = sprints.find((s) => String(s.id) === sprintId);
       if (!sprint) {
         await ctx.reply('Спринт не найден. Попробуйте ещё раз.');
         return;
@@ -323,11 +323,11 @@ function registerPlanHandlers(bot) {
   });
 
   // Квалификация шаг 2: привязка к инициативе
-  bot.action(/^qualify_init_(\d+)_(\d+)$/, async (ctx) => {
+  bot.action(/^qualify_init_([^_]+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const initiativeId = parseInt(ctx.match[1]);
-      const itemId = parseInt(ctx.match[2]);
+      const initiativeId = ctx.match[1];
+      const itemId = ctx.match[2];
 
       const { updatePlanItem } = require('../../database/queries/planItems');
       await updatePlanItem(itemId, { initiative_id: initiativeId, is_strategic: true });
@@ -338,7 +338,7 @@ function registerPlanHandlers(bot) {
       const idx = (ctx.session?.qualificationIndex || 0) + 1;
       ctx.session.qualificationIndex = idx;
 
-      const initiative = initiatives.find((i) => i.id === initiativeId);
+      const initiative = initiatives.find((i) => String(i.id) === initiativeId);
       const label = initiative ? `🎯 ${initiative.title}` : '📊 По стратегии';
       await ctx.editMessageText(`${label}: ${items[idx - 1].text_raw}`);
 
@@ -354,10 +354,10 @@ function registerPlanHandlers(bot) {
   });
 
   // Квалификация: вне стратегии
-  bot.action(/^qualify_fire_(\d+)$/, async (ctx) => {
+  bot.action(/^qualify_fire_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const itemId = parseInt(ctx.match[1]);
+      const itemId = ctx.match[1];
 
       const { updatePlanItem } = require('../../database/queries/planItems');
       await updatePlanItem(itemId, { initiative_id: null, is_strategic: false });
@@ -414,10 +414,10 @@ function registerPlanHandlers(bot) {
   });
 
   // Удаление задачи
-  bot.action(/^action_delete_(\d+)$/, async (ctx) => {
+  bot.action(/^action_delete_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('🗑');
     try {
-      const itemId = parseInt(ctx.match[1]);
+      const itemId = ctx.match[1];
       const { deletePlanItem } = require('../../database/queries/planItems');
       await deletePlanItem(itemId);
       await ctx.editMessageText('🗑 Задача удалена');
@@ -428,10 +428,10 @@ function registerPlanHandlers(bot) {
   });
 
   // Переквалификация задачи — показать выбор спринта или инициатив
-  bot.action(/^action_requalify_(\d+)$/, async (ctx) => {
+  bot.action(/^action_requalify_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const itemId = parseInt(ctx.match[1]);
+      const itemId = ctx.match[1];
       const { data: user } = await getUserByTelegramId(ctx.from.id);
       if (!user) return;
 
@@ -472,13 +472,13 @@ function registerPlanHandlers(bot) {
   });
 
   // Переквалификация: выбор спринта (шаг 1 при нескольких спринтах)
-  bot.action(/^requalify_sprint_(\d+)_(\d+)$/, async (ctx) => {
+  bot.action(/^requalify_sprint_([^_]+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const sprintId = parseInt(ctx.match[1]);
-      const itemId = parseInt(ctx.match[2]);
+      const sprintId = ctx.match[1];
+      const itemId = ctx.match[2];
       const sprints = ctx.session?.requalifySprints || [];
-      const sprint = sprints.find((s) => s.id === sprintId);
+      const sprint = sprints.find((s) => String(s.id) === sprintId);
       if (!sprint) {
         await ctx.reply('Спринт не найден.');
         return;
@@ -502,11 +502,11 @@ function registerPlanHandlers(bot) {
   });
 
   // Переквалификация: выбрана инициатива
-  bot.action(/^requalify_init_(\d+)_(\d+)$/, async (ctx) => {
+  bot.action(/^requalify_init_([^_]+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const initiativeId = parseInt(ctx.match[1]);
-      const itemId = parseInt(ctx.match[2]);
+      const initiativeId = ctx.match[1];
+      const itemId = ctx.match[2];
 
       const { updatePlanItem } = require('../../database/queries/planItems');
       await updatePlanItem(itemId, { initiative_id: initiativeId, is_strategic: true });
@@ -526,10 +526,10 @@ function registerPlanHandlers(bot) {
   });
 
   // Переквалификация: вне стратегии
-  bot.action(/^requalify_fire_(\d+)$/, async (ctx) => {
+  bot.action(/^requalify_fire_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const itemId = parseInt(ctx.match[1]);
+      const itemId = ctx.match[1];
       const { updatePlanItem } = require('../../database/queries/planItems');
       await updatePlanItem(itemId, { initiative_id: null, is_strategic: false });
       await ctx.editMessageText('🔥 Вне стратегии ✅');

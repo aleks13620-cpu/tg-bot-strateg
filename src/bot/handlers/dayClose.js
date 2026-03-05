@@ -103,7 +103,16 @@ function registerDayCloseHandlers(bot) {
       const { data: user } = await getUserByTelegramId(ctx.from.id);
       if (!user) return;
 
-      const carryItems = ctx.session.carryOverItems || [];
+      const date = getTodayDate();
+      const { data: allItems } = await getPlanItemsByDate(user.id, date);
+      const skipped = allItems.filter((i) => i.status === 'skipped');
+      const carryItems = skipped.map((item) => ({
+        id: item.id,
+        text_raw: item.text_raw,
+        initiative_id: item.initiative_id,
+        is_strategic: item.is_strategic,
+      }));
+
       if (carryItems.length === 0) {
         await ctx.editMessageText('Нет задач для переноса.');
         return;
@@ -130,7 +139,6 @@ function registerDayCloseHandlers(bot) {
       }
 
       // Коучинг
-      const date = getTodayDate();
       await showCoaching(ctx, user.id, date);
     } catch (error) {
       console.error('[DAYCLOSE] Carry all error:', error.message);
