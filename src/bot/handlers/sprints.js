@@ -110,7 +110,7 @@ function registerSprintsHandlers(bot) {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
             [Markup.button.callback('📝 Изменить цель', `edit_sprint_goal_${sprintId}`)],
-            [Markup.button.callback('📋 Редактировать инициативы', `edit_sprint_inits_${sprintId}`)],
+            [Markup.button.callback('📋 Редактировать направления', `edit_sprint_inits_${sprintId}`)],
             [Markup.button.callback('💰 Изменить финцель', `edit_sprint_fin_${sprintId}`)],
             [Markup.button.callback('🏆 SFI-цель (%)', `edit_sprint_sfi_${sprintId}`)],
           ]),
@@ -233,7 +233,7 @@ function registerSprintsHandlers(bot) {
     try {
       const initId = ctx.match[1];
       ctx.session.awaitingInitRename = initId;
-      await ctx.reply('✏️ Напишите новое название инициативы:');
+      await ctx.reply('✏️ Напишите новое название направления:');
     } catch (error) {
       console.error('[SPRINTS] Rename init prompt error:', error.message);
       await ctx.reply('Ошибка.');
@@ -249,7 +249,7 @@ function registerSprintsHandlers(bot) {
 
       const { data: initiatives } = await getInitiativesBySprint(sprintId);
       if (initiatives.length <= 1) {
-        await ctx.reply('❌ Нельзя удалить последнюю инициативу. В спринте должна быть хотя бы одна.');
+        await ctx.reply('❌ Нельзя удалить последнее направление. В спринте должно быть хотя бы одно.');
         return;
       }
 
@@ -259,7 +259,7 @@ function registerSprintsHandlers(bot) {
         return;
       }
 
-      await ctx.editMessageText('🗑 Инициатива удалена');
+      await ctx.editMessageText('🗑 Направление удалено');
       console.log(`[SPRINTS] Initiative ${initId} deleted`);
     } catch (error) {
       console.error('[SPRINTS] Delete init error:', error.message);
@@ -275,12 +275,12 @@ function registerSprintsHandlers(bot) {
 
       const { data: initiatives } = await getInitiativesBySprint(sprintId);
       if (initiatives.length >= 5) {
-        await ctx.reply('❌ Максимум 5 инициатив в спринте.');
+        await ctx.reply('❌ Максимум 5 направлений в спринте.');
         return;
       }
 
       ctx.session.awaitingInitAdd = sprintId;
-      await ctx.reply('➕ Напишите название новой инициативы:');
+      await ctx.reply('➕ Напишите название нового направления:');
     } catch (error) {
       console.error('[SPRINTS] Add init prompt error:', error.message);
       await ctx.reply('Ошибка.');
@@ -375,7 +375,7 @@ function registerSprintsHandlers(bot) {
           await ctx.reply('Ошибка при переименовании инициативы.');
           return;
         }
-        await ctx.reply(`✅ Инициатива переименована:\n📌 ${newTitle}`, persistentKeyboard);
+        await ctx.reply(`✅ Направление переименовано:\n📌 ${newTitle}`, persistentKeyboard);
         console.log(`[SPRINTS] Initiative ${initId} renamed`);
       } catch (error) {
         console.error('[SPRINTS] Rename init error:', error.message);
@@ -395,7 +395,7 @@ function registerSprintsHandlers(bot) {
           await ctx.reply('Ошибка при добавлении инициативы.');
           return;
         }
-        await ctx.reply(`✅ Инициатива добавлена:\n📌 ${title}`, persistentKeyboard);
+        await ctx.reply(`✅ Направление добавлено:\n📌 ${title}`, persistentKeyboard);
         console.log(`[SPRINTS] New initiative added to sprint ${sprintId}`);
       } catch (error) {
         console.error('[SPRINTS] Add init error:', error.message);
@@ -417,7 +417,7 @@ async function showInitiativesList(ctx, sprintId) {
     return;
   }
 
-  await ctx.reply('📋 *Инициативы спринта:*', { parse_mode: 'Markdown' });
+  await ctx.reply('📌 *Направления спринта:*', { parse_mode: 'Markdown' });
 
   for (const init of initiatives) {
     const buttons = [
@@ -431,9 +431,9 @@ async function showInitiativesList(ctx, sprintId) {
 
   if (initiatives.length < 5) {
     await ctx.reply(
-      `Инициатив: ${initiatives.length}/5`,
+      `Направлений: ${initiatives.length}/5`,
       Markup.inlineKeyboard([
-        [Markup.button.callback('➕ Добавить инициативу', `add_init_${sprintId}`)],
+        [Markup.button.callback('➕ Добавить направление', `add_init_${sprintId}`)],
       ])
     );
   }
