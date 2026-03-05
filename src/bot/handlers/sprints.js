@@ -135,21 +135,50 @@ function registerSprintsHandlers(bot) {
     }
   });
 
-  // Изменение финансовой цели спринта
+  // Изменение финансовой цели — сначала выбор валюты
   bot.action(/^edit_sprint_fin_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const sprintId = ctx.match[1];
-      ctx.session.awaitingSprintFinEdit = sprintId;
       await ctx.reply(
-        '💰 Напишите финансовую цель спринта или очистите её:',
-        Markup.inlineKeyboard([
-          [Markup.button.callback('🗑 Убрать финцель', `clear_sprint_fin_${sprintId}`)],
-          [Markup.button.callback('❌ Отмена', 'cancel_sprint_fin_edit')],
-        ])
+        '💰 *Финансовая цель спринта*\n\nВыберите валюту:',
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback('₽ Рубли', `fin_cur_rub_${sprintId}`),
+              Markup.button.callback('$ Доллары', `fin_cur_usd_${sprintId}`),
+              Markup.button.callback('€ Евро', `fin_cur_eur_${sprintId}`),
+            ],
+            [Markup.button.callback('🗑 Убрать финцель', `clear_sprint_fin_${sprintId}`)],
+            [Markup.button.callback('❌ Отмена', 'cancel_sprint_fin_edit')],
+          ]),
+        }
       );
     } catch (error) {
       console.error('[SPRINTS] Edit fin goal prompt error:', error.message);
+      await ctx.reply('Ошибка.');
+    }
+  });
+
+  // Выбор валюты — запрашиваем сумму
+  bot.action(/^fin_cur_(rub|usd|eur)_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const currCode = ctx.match[1];
+      const sprintId = ctx.match[2];
+      const symbols = { rub: '₽', usd: '$', eur: '€' };
+      const symbol = symbols[currCode];
+      ctx.session.awaitingSprintFinAmount = { sprintId, symbol };
+      await ctx.editMessageText(
+        `💰 Введите сумму в ${symbol} (например: *1 500 000*):`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'cancel_sprint_fin_edit')]]),
+        }
+      );
+    } catch (error) {
+      console.error('[SPRINTS] Currency select error:', error.message);
       await ctx.reply('Ошибка.');
     }
   });
@@ -171,7 +200,7 @@ function registerSprintsHandlers(bot) {
   // Отмена редактирования финцели
   bot.action('cancel_sprint_fin_edit', async (ctx) => {
     await ctx.answerCbQuery();
-    if (ctx.session) ctx.session.awaitingSprintFinEdit = null;
+    if (ctx.session) ctx.session.awaitingSprintFinAmount = null;
     await ctx.editMessageText('❌ Отменено.');
   });
 
@@ -292,7 +321,7 @@ function registerSprintsHandlers(bot) {
     if (ctx.message.text.startsWith('/')) return next();
     if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
       ctx.session.awaitingSprintGoalEdit = null;
-      ctx.session.awaitingSprintFinEdit = null;
+      ctx.session.awaitingSprintFinAmount = null;
       ctx.session.awaitingSprintSfiEdit = null;
       ctx.session.awaitingInitRename = null;
       ctx.session.awaitingInitAdd = null;
@@ -324,19 +353,27 @@ function registerSprintsHandlers(bot) {
       return;
     }
 
-    // Изменение финансовой цели спринта
-    if (ctx.session?.awaitingSprintFinEdit) {
-      const sprintId = ctx.session.awaitingSprintFinEdit;
-      ctx.session.awaitingSprintFinEdit = null;
+    // Изменение финансовой цели спринта (с выбором валюты)
+    if (ctx.session?.awaitingSprintFinAmount) {
+      const { sprintId, symbol } = ctx.session.awaitingSprintFinAmount;
+      ctx.session.awaitingSprintFinAmount = null;
       try {
-        const finGoal = ctx.message.text.trim();
+        const raw = ctx.message.text.trim().replace(/[\s,]/g, '');
+        const value = parseFloat(raw);
+        if (isNaN(value) || value <= 0) {
+          await ctx.reply(`❌ Введите положительное число, например: *1 500 000*`, { parse_mode: 'Markdown' });
+          ctx.session.awaitingSprintFinAmount = { sprintId, symbol };
+          return;
+        }
+        const formatted = Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+        const finGoal = `${formatted} ${symbol}`;
         const { error } = await updateSprintFinancialGoal(sprintId, finGoal);
         if (error) {
           await ctx.reply('Ошибка при обновлении финансовой цели.');
           return;
         }
-        await ctx.reply(`✅ Финансовая цель обновлена:\n💰 ${finGoal}`, persistentKeyboard);
-        console.log(`[SPRINTS] Sprint ${sprintId} financial goal updated`);
+        await ctx.reply(`✅ Финансовая цель: *${finGoal}*`, { parse_mode: 'Markdown', ...persistentKeyboard });
+        console.log(`[SPRINTS] Sprint ${sprintId} financial goal set to ${finGoal}`);
       } catch (error) {
         console.error('[SPRINTS] Update fin goal error:', error.message);
         await ctx.reply('Ошибка при обновлении финансовой цели.');
