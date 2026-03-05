@@ -136,6 +136,7 @@ function registerPlanHandlers(bot) {
         ctx.session.qualificationSelectedSprint = null;
         ctx.session.qualificationInitiatives = [];
         ctx.session.qualificationKeyTaskSet = false;
+        ctx.session.qualificationMessageId = null;
         ctx.session.qualificationDate = dateParam;
         await ctx.reply(`✅ Задача на ${dateLabel}:\n"${text}"\n\nКвалифицируем:`);
         await startQualificationForItem(ctx, items[0], sprints);
@@ -224,6 +225,7 @@ function registerPlanHandlers(bot) {
           ctx.session.qualificationSelectedSprint = null;
           ctx.session.qualificationInitiatives = [];
           ctx.session.qualificationKeyTaskSet = false;
+          ctx.session.qualificationMessageId = null;
           ctx.session.qualificationDate = iso;
           await ctx.reply(`✅ Задача на ${dateLabel}:\n"${text}"\n\nКвалифицируем:`);
           await startQualificationForItem(ctx, items[0], sprints);
@@ -269,6 +271,7 @@ function registerPlanHandlers(bot) {
       ctx.session.qualificationSelectedSprint = null;
       ctx.session.qualificationInitiatives = [];
       ctx.session.qualificationKeyTaskSet = false;
+      ctx.session.qualificationMessageId = null;
 
       await ctx.reply(`✅ Добавлено задач: ${items.length} на ${formatDateRu(date)}\n\nТеперь квалифицируем каждую задачу:`);
       await startQualificationForItem(ctx, items[0], sprints);
@@ -604,6 +607,21 @@ async function getSprintContext(userId) {
   return text;
 }
 
+// Редактирует сохранённое сообщение квалификации или создаёт новое (и сохраняет message_id)
+async function editOrReplyQualification(ctx, text, opts) {
+  const msgId = ctx.session.qualificationMessageId;
+  if (msgId) {
+    try {
+      await ctx.telegram.editMessageText(ctx.chat.id, msgId, undefined, text, opts);
+      return;
+    } catch {
+      // fallback to reply if message too old / deleted
+    }
+  }
+  const sent = await ctx.reply(text, opts);
+  ctx.session.qualificationMessageId = sent.message_id;
+}
+
 async function sendQualificationQuestion(ctx, item, initiatives) {
   const buttons = [];
 
@@ -619,7 +637,8 @@ async function sendQualificationQuestion(ctx, item, initiatives) {
     Markup.button.callback('🔥 Вне стратегии', `qualify_fire_${item.id}`),
   ]);
 
-  await ctx.reply(
+  await editOrReplyQualification(
+    ctx,
     `Задача: *${item.text_raw}*\n\nК какой инициативе относится?`,
     { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }
   );
@@ -628,7 +647,8 @@ async function sendQualificationQuestion(ctx, item, initiatives) {
 // Запускает квалификацию для одной задачи с учётом числа спринтов
 async function startQualificationForItem(ctx, item, sprints) {
   if (!sprints || sprints.length === 0) {
-    await ctx.reply(
+    await editOrReplyQualification(
+      ctx,
       `Задача: *${item.text_raw}*\n\nК какой инициативе относится?`,
       { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[
         Markup.button.callback('🔥 Вне стратегии', `qualify_fire_${item.id}`),
@@ -647,8 +667,6 @@ async function startQualificationForItem(ctx, item, sprints) {
       // Нет инициатив — автоматически стратегическая
       const { updatePlanItem } = require('../../database/queries/planItems');
       await updatePlanItem(item.id, { initiative_id: null, is_strategic: true });
-
-      await ctx.reply(`📊 В спринт (без инициатив): ${item.text_raw}`);
       await askKeyTaskQuestion(ctx, item);
       return;
     }
@@ -666,7 +684,8 @@ async function startQualificationForItem(ctx, item, sprints) {
   ]);
   buttons.push([Markup.button.callback('🔥 Вне стратегии', `qualify_fire_${item.id}`)]);
 
-  await ctx.reply(
+  await editOrReplyQualification(
+    ctx,
     `Задача: *${item.text_raw}*\n\nВ какой спринт?`,
     { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }
   );
@@ -691,7 +710,8 @@ async function askKeyTaskQuestion(ctx, item) {
     return;
   }
 
-  await ctx.reply(
+  await editOrReplyQualification(
+    ctx,
     `⭐ Сделать задачей дня?\n_${item.text_raw}_`,
     {
       parse_mode: 'Markdown',
@@ -716,6 +736,7 @@ async function finishQualification(ctx) {
   ctx.session.qualificationDate = null;
   ctx.session.requalifySprints = null;
   ctx.session.qualificationKeyTaskSet = null;
+  ctx.session.qualificationMessageId = null;
 
   const { data: user } = await getUserByTelegramId(ctx.from.id);
   const { data: updatedItems } = await getPlanForDate(user.id, date);
