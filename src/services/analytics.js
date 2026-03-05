@@ -242,6 +242,50 @@ function formatSprintProgressBar(sprint, sfi = null) {
   return text;
 }
 
+function buildSfiChartUrl(labels, sfiValues) {
+  const colors = sfiValues.map((v) =>
+    v >= 70 ? 'rgba(76,175,80,0.85)' : v >= 50 ? 'rgba(255,152,0,0.85)' : 'rgba(244,67,54,0.85)'
+  );
+  const config = {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'SFI %', data: sfiValues, backgroundColor: colors }],
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: { y: { min: 0, max: 100, ticks: { callback: '__PERCENT__' } } },
+    },
+  };
+  const json = JSON.stringify(config).replace('"__PERCENT__"', 'function(v){return v+"%"}');
+  return `https://quickchart.io/chart?c=${encodeURIComponent(json)}&width=500&height=300&backgroundColor=white`;
+}
+
+function formatAllSprintsStats(sprintDataList) {
+  const valid = sprintDataList.filter((s) => s.stats && s.stats.done > 0);
+  if (valid.length === 0) return '📊 Данных по спринтам нет — выполните хотя бы одну задачу.';
+
+  const avgSfi = Math.round(valid.reduce((sum, s) => sum + s.stats.sfi, 0) / valid.length);
+  const totalDone = valid.reduce((sum, s) => sum + s.stats.done, 0);
+  const best = valid.reduce((max, s) => s.stats.sfi > max.stats.sfi ? s : max, valid[0]);
+  const sfiIcon = avgSfi >= 70 ? '🟢' : avgSfi >= 50 ? '🟡' : '🔴';
+
+  let text = `📊 *Статистика по ${valid.length} спринтам:*\n\n`;
+  text += `✅ Всего задач выполнено: ${totalDone}\n`;
+  text += `📊 Средний SFI: *${avgSfi}%* ${sfiIcon}\n`;
+  text += `🏆 Лучший спринт: _${best.sprint.goal_text}_ — SFI ${best.stats.sfi}%\n`;
+  text += '\n*SFI по спринтам:*\n';
+
+  for (const { sprint, stats } of sprintDataList) {
+    if (!stats || stats.done === 0) continue;
+    const icon = stats.sfi >= 70 ? '🟢' : stats.sfi >= 50 ? '🟡' : '🔴';
+    const name = sprint.goal_text.length > 28 ? sprint.goal_text.slice(0, 25) + '…' : sprint.goal_text;
+    text += `${icon} ${name}: *${stats.sfi}%* (${stats.done} задач)\n`;
+  }
+
+  return text;
+}
+
 module.exports = {
   getDayStats,
   getSprintStats,
@@ -250,4 +294,6 @@ module.exports = {
   formatSprintStats,
   formatWeekStats,
   formatSprintProgressBar,
+  buildSfiChartUrl,
+  formatAllSprintsStats,
 };

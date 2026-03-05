@@ -126,4 +126,18 @@ async function getSprintById(sprintId) {
   return { data: data || null, error: null };
 }
 
-module.exports = { createSprint, getActiveSprint, getActiveSprints, getSprintById, completeSprint, updateSprintGoal, updateSprintFinancialGoal, updateSprintSfiChallenge };
+async function getAllSprints(userId) {
+  const { data, error } = await supabase
+    .from('sprints')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[DB] Error getting all sprints:', error.message);
+    return { data: [], error };
+  }
+  return { data: data || [], error: null };
+}
+
+module.exports = { createSprint, getActiveSprint, getActiveSprints, getSprintById, getAllSprints, completeSprint, updateSprintGoal, updateSprintFinancialGoal, updateSprintSfiChallenge };
