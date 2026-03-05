@@ -286,6 +286,43 @@ function formatAllSprintsStats(sprintDataList) {
   return text;
 }
 
+function parseFinancialGoal(goalStr) {
+  if (!goalStr) return null;
+  const clean = goalStr.replace(/\s/g, '');
+  const amount = parseFloat(clean.replace(/[^\d.]/g, ''));
+  const symbol = clean.includes('₽') ? '₽' : clean.includes('$') ? '$' : clean.includes('€') ? '€' : '';
+  return isNaN(amount) || amount <= 0 ? null : { amount, symbol };
+}
+
+function formatFinProgressBar(actual, target, symbol) {
+  const pct = Math.min(100, Math.round((actual / target) * 100));
+  const filled = Math.round(pct / 10);
+  const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
+  const actualFmt = Math.round(actual).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const targetFmt = Math.round(target).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const icon = pct >= 100 ? '🏆' : pct >= 70 ? '🟢' : pct >= 40 ? '🟡' : '🔴';
+  return `${bar} *${pct}%* ${icon}\n${actualFmt} / ${targetFmt} ${symbol}`;
+}
+
+function buildFinChartUrl(labels, pctValues) {
+  const colors = pctValues.map((v) =>
+    v >= 100 ? 'rgba(33,150,243,0.85)' : v >= 70 ? 'rgba(76,175,80,0.85)' : v >= 40 ? 'rgba(255,152,0,0.85)' : 'rgba(244,67,54,0.85)'
+  );
+  const config = {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'Финцель %', data: pctValues, backgroundColor: colors }],
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: { y: { min: 0, max: 100, ticks: { callback: '__PERCENT__' } } },
+    },
+  };
+  const json = JSON.stringify(config).replace('"__PERCENT__"', 'function(v){return v+"%"}');
+  return `https://quickchart.io/chart?c=${encodeURIComponent(json)}&width=500&height=300&backgroundColor=white`;
+}
+
 module.exports = {
   getDayStats,
   getSprintStats,
@@ -296,4 +333,7 @@ module.exports = {
   formatSprintProgressBar,
   buildSfiChartUrl,
   formatAllSprintsStats,
+  parseFinancialGoal,
+  formatFinProgressBar,
+  buildFinChartUrl,
 };
