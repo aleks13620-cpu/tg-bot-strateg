@@ -1,7 +1,7 @@
 const { supabase } = require('../../config/database');
 const { Markup } = require('telegraf');
 const { getTodayPlan, formatDateRu, getTodayDate } = require('./planning');
-const { getPlanItemsByDateRange, getPlanItemsByDate } = require('../database/queries/planItems');
+const { getPlanItemsByDateRange, getPlanItemsByDate, getStaleItems } = require('../database/queries/planItems');
 const { getActiveSprint } = require('../database/queries/sprints');
 const { getStreakInfo } = require('./streak');
 const { getWeekStats, formatWeekStats, formatSprintProgressBar, getDayStats } = require('./analytics');
@@ -268,6 +268,36 @@ function getReminderType() {
   return 'evening';
 }
 
+/**
+ * Устаревшие задачи: pending >= 3 дней назад.
+ * Возвращает { text, keyboard } или null если нет таких задач.
+ */
+async function getStaleMessage(userId) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 2);
+  const cutoffStr = cutoff.toISOString().split('T')[0];
+
+  const { data: items } = await getStaleItems(userId, cutoffStr);
+  if (!items || items.length === 0) return null;
+
+  const shown = items.slice(0, 5);
+  let text = `⚠️ *Устаревшие задачи (${items.length}):*\n\n`;
+  shown.forEach((item, i) => {
+    const dateLabel = formatDateRu(item.date);
+    const preview = item.text_raw.length > 40 ? item.text_raw.slice(0, 40) + '…' : item.text_raw;
+    text += `${i + 1}. ${preview} _(${dateLabel})_\n`;
+  });
+  text += '\n_Выбери действие для каждой задачи:_';
+
+  const buttons = shown.map((item) => [
+    Markup.button.callback('✅', `stale_done_${item.id}`),
+    Markup.button.callback('⏭', `stale_skip_${item.id}`),
+    Markup.button.callback('📅 Сегодня', `stale_today_${item.id}`),
+  ]);
+
+  return { text, keyboard: Markup.inlineKeyboard(buttons) };
+}
+
 module.exports = {
   getAllActiveUsers,
   getMorningMessage,
@@ -275,5 +305,6 @@ module.exports = {
   getMidDayMessage,
   getReactivationMessage,
   getWeeklyMessage,
+  getStaleMessage,
   getReminderType,
 };

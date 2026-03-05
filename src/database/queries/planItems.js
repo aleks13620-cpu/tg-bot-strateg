@@ -115,6 +115,22 @@ async function createPlanItemsWithDetails(userId, date, items) {
   return { data: data || [], error };
 }
 
+async function getStaleItems(userId, cutoffDate) {
+  const { data, error } = await supabase
+    .from('plan_items')
+    .select('*, initiative:initiatives(id, title)')
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .lt('date', cutoffDate)
+    .order('date', { ascending: true });
+
+  if (error) {
+    console.error('[DB] Error getting stale items:', error.message);
+    return { data: [], error };
+  }
+  return { data: data || [], error: null };
+}
+
 async function getPlanItemsByDateRange(userId, startDate, endDate) {
   const { data, error } = await supabase
     .from('plan_items')
@@ -138,6 +154,7 @@ module.exports = {
   createPlanItemsWithDetails,
   getPlanItemsByDate,
   getPlanItemsByDateRange,
+  getStaleItems,
   updatePlanItem,
   getPlanItemById,
   deletePlanItem,

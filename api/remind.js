@@ -6,6 +6,7 @@ const {
   getMidDayMessage,
   getReactivationMessage,
   getWeeklyMessage,
+  getStaleMessage,
   getReminderType,
 } = require('../src/services/reminder');
 
@@ -44,15 +45,29 @@ module.exports = async (req, res) => {
 
         if (!message) {
           skipped++;
-          continue;
+        } else {
+          await bot.telegram.sendMessage(
+            user.telegram_id,
+            message.text,
+            { parse_mode: 'Markdown', ...message.keyboard }
+          );
+          sent++;
         }
 
-        await bot.telegram.sendMessage(
-          user.telegram_id,
-          message.text,
-          { parse_mode: 'Markdown', ...message.keyboard }
-        );
-        sent++;
+        // Утром — дополнительно отправляем устаревшие задачи
+        if (type === 'morning') {
+          const staleMsg = await getStaleMessage(user.id);
+          if (staleMsg) {
+            await bot.telegram.sendMessage(
+              user.telegram_id,
+              staleMsg.text,
+              { parse_mode: 'Markdown', ...staleMsg.keyboard }
+            );
+          }
+          if (!message) continue;
+        }
+
+        if (!message) continue;
       } catch (err) {
         console.error(`[REMIND] Failed for user ${user.telegram_id}:`, err.message);
         failed++;

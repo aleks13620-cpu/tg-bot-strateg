@@ -5,6 +5,7 @@ const { getTodayDate } = require('../../services/planning');
 const { getActiveSprint } = require('../../database/queries/sprints');
 const { getStreakInfo } = require('../../services/streak');
 const { getDayStats, formatSprintProgressBar } = require('../../services/analytics');
+const { getStaleMessage } = require('../../services/reminder');
 
 function sortItems(items) {
   return [...items].sort((a, b) => {
@@ -107,6 +108,24 @@ function registerTodayHandlers(bot) {
     await ctx.answerCbQuery('⏭');
     await handleTodayStatus(ctx, ctx.match[1], 'skipped');
   });
+
+  // Устаревшие задачи: выполнено
+  bot.action(/^stale_done_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery('✅');
+    await handleStaleAction(ctx, ctx.match[1], 'done');
+  });
+
+  // Устаревшие задачи: пропустить
+  bot.action(/^stale_skip_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery('⏭');
+    await handleStaleAction(ctx, ctx.match[1], 'skipped');
+  });
+
+  // Устаревшие задачи: перенести на сегодня
+  bot.action(/^stale_today_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery('📅');
+    await handleStaleAction(ctx, ctx.match[1], 'today');
+  });
 }
 
 async function showToday(ctx) {
@@ -177,6 +196,35 @@ async function handleTodayStatus(ctx, itemId, status) {
     }
   } catch (error) {
     console.error('[TODAY] Status update error:', error.message);
+  }
+}
+
+async function handleStaleAction(ctx, itemId, action) {
+  try {
+    const { data: user } = await getUserByTelegramId(ctx.from.id);
+    if (!user) return;
+
+    if (action === 'done') {
+      await updatePlanItem(itemId, { status: 'done' });
+    } else if (action === 'skipped') {
+      await updatePlanItem(itemId, { status: 'skipped' });
+    } else if (action === 'today') {
+      await updatePlanItem(itemId, { date: getTodayDate() });
+    }
+
+    // Перерисовываем сообщение с оставшимися stale задачами
+    const staleMsg = await getStaleMessage(user.id);
+    if (!staleMsg) {
+      await ctx.editMessageText('✅ Все устаревшие задачи обработаны!');
+    } else {
+      try {
+        await ctx.editMessageText(staleMsg.text, { parse_mode: 'Markdown', ...staleMsg.keyboard });
+      } catch {
+        await ctx.reply(staleMsg.text, { parse_mode: 'Markdown', ...staleMsg.keyboard });
+      }
+    }
+  } catch (error) {
+    console.error('[STALE] Action error:', error.message);
   }
 }
 
