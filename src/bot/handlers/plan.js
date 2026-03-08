@@ -1,5 +1,5 @@
 const { Markup } = require('telegraf');
-const { getUserByTelegramId, checkHintAndMark } = require('../../database/queries/users');
+const { getUserByTelegramId, checkHintAndMark, setPendingPlanDate, clearPendingPlanDate } = require('../../database/queries/users');
 const { getActiveSprints, getSprintById } = require('../../database/queries/sprints');
 const { getPlanItemById } = require('../../database/queries/planItems');
 const { addDayPlanForDate, getTodayPlan, getPlanForDate, formatPlanMessages, getTodayDate, parseDateInput, formatDateRu } = require('../../services/planning');
@@ -247,12 +247,22 @@ function registerPlanHandlers(bot) {
         return;
       }
 
+      // Персистируем дату в БД на случай потери сессии (serverless)
+      const { data: userForDate } = await getUserByTelegramId(ctx.from.id);
+      if (userForDate) setPendingPlanDate(userForDate.id, iso);
+
       ctx.session.awaitingPlanInput = true;
       await ctx.reply(`📝 Напишите задачи на ${dateLabel} — каждая с новой строки или через запятую:`);
       return;
     }
 
-    if (!ctx.session?.awaitingPlanInput) return next();
+    // Фолбэк: если сессия потеряна (serverless cold start) — восстанавливаем дату из БД
+    if (!ctx.session?.awaitingPlanInput) {
+      const { data: userCheck } = await getUserByTelegramId(ctx.from.id);
+      if (!userCheck?.meta?.pendingPlanDate) return next();
+      ctx.session.awaitingPlanInput = true;
+      ctx.session.selectedDate = userCheck.meta.pendingPlanDate;
+    }
 
     try {
       const { data: user } = await getUserByTelegramId(ctx.from.id);
@@ -265,6 +275,7 @@ function registerPlanHandlers(bot) {
       const date = ctx.session.selectedDate || getTodayDate();
       ctx.session.qualificationDate = date;
       ctx.session.selectedDate = null;
+      clearPendingPlanDate(user.id); // сбрасываем персистентное состояние
 
       const { data: items, error } = await addDayPlanForDate(user.id, ctx.message.text, date);
 

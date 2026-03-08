@@ -77,4 +77,25 @@ async function checkHintAndMark(userId, key) {
   return true;
 }
 
-module.exports = { findOrCreateUser, getUserByTelegramId, touchUserActivity, checkHintAndMark };
+// Сохраняет ожидающую дату для ввода задач (fire & forget, для serverless-совместимости)
+function setPendingPlanDate(userId, date) {
+  supabase.from('users').select('meta').eq('id', userId).single()
+    .then(({ data }) => {
+      const meta = data?.meta || {};
+      return supabase.from('users').update({ meta: { ...meta, pendingPlanDate: date } }).eq('id', userId);
+    })
+    .catch(() => {});
+}
+
+// Сбрасывает ожидающую дату после обработки задач (fire & forget)
+function clearPendingPlanDate(userId) {
+  supabase.from('users').select('meta').eq('id', userId).single()
+    .then(({ data }) => {
+      const meta = { ...(data?.meta || {}) };
+      delete meta.pendingPlanDate;
+      return supabase.from('users').update({ meta }).eq('id', userId);
+    })
+    .catch(() => {});
+}
+
+module.exports = { findOrCreateUser, getUserByTelegramId, touchUserActivity, checkHintAndMark, setPendingPlanDate, clearPendingPlanDate };
