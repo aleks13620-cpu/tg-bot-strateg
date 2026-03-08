@@ -776,6 +776,11 @@ async function finishQualification(ctx) {
   await ctx.reply('✅ Квалификация завершена!');
   await sendPlanMessages(ctx, updatedItems, { buttons: persistentKeyboard, date });
 
+  const uncoveredMsg = await getUncoveredInitiativesMessage(user.id, date);
+  if (uncoveredMsg) {
+    await ctx.reply(uncoveredMsg, { parse_mode: 'Markdown' });
+  }
+
   // Подсказка: первая квалификация задач
   const showHint = await checkHintAndMark(user.id, 'hint_first_qualify');
   if (showHint) {
@@ -788,4 +793,46 @@ async function finishQualification(ctx) {
   }
 }
 
-module.exports = { registerPlanHandlers, sendPlanMessages };
+// Возвращает сообщение об инициативах без задач на дату, или null если все покрыты
+async function getUncoveredInitiativesMessage(userId, date) {
+  try {
+    const { data: sprints } = await getActiveSprints(userId);
+    if (!sprints || sprints.length === 0) return null;
+
+    const { data: items } = await getPlanForDate(userId, date);
+    const coveredIds = new Set(
+      (items || []).filter((i) => i.initiative_id).map((i) => i.initiative_id)
+    );
+
+    const uncovered = [];
+    for (const sprint of sprints) {
+      const missing = (sprint.initiatives || []).filter((init) => !coveredIds.has(init.id));
+      if (missing.length > 0) {
+        uncovered.push({ sprint, initiatives: missing });
+      }
+    }
+
+    if (uncovered.length === 0) return null;
+
+    let text = '💡 *Направления без задач на сегодня:*\n';
+    for (const { sprint, initiatives } of uncovered) {
+      if (sprints.length > 1) {
+        const name = sprint.goal_text.length > 40 ? sprint.goal_text.slice(0, 38) + '…' : sprint.goal_text;
+        text += `\n🎯 _${escapeMarkdown(name)}_\n`;
+      } else {
+        text += '\n';
+      }
+      for (const init of initiatives) {
+        text += `  • ${escapeMarkdown(init.title)}\n`;
+      }
+    }
+    text += '\nДобавьте по ним хотя бы одну задачу, чтобы двигаться к цели спринта.';
+
+    return text;
+  } catch (err) {
+    console.error('[PLAN] getUncoveredInitiativesMessage error:', err.message);
+    return null;
+  }
+}
+
+module.exports = { registerPlanHandlers, sendPlanMessages, getUncoveredInitiativesMessage };

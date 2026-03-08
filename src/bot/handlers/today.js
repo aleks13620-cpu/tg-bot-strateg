@@ -6,6 +6,7 @@ const { getActiveSprint } = require('../../database/queries/sprints');
 const { getStreakInfo } = require('../../services/streak');
 const { getDayStats, formatSprintProgressBar } = require('../../services/analytics');
 const { getStaleMessage } = require('../../services/reminder');
+const { getUncoveredInitiativesMessage } = require('./plan');
 
 function sortItems(items) {
   return [...items].sort((a, b) => {
@@ -197,6 +198,14 @@ async function showToday(ctx) {
     if (keyboard) Object.assign(options, keyboard);
 
     await ctx.reply(text, options);
+
+    if (items.length > 0) {
+      const uncoveredMsg = await getUncoveredInitiativesMessage(user.id, date);
+      if (uncoveredMsg) {
+        await ctx.reply(uncoveredMsg, { parse_mode: 'Markdown' });
+      }
+    }
+
     console.log(`[TODAY] Shown for user ${user.id}, tasks=${items.length}`);
   } catch (error) {
     console.error('[TODAY] showToday error:', error.message);
