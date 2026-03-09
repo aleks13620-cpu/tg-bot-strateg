@@ -1,7 +1,8 @@
 const { Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
 const { getPlanItemsByDate, updatePlanItem } = require('../../database/queries/planItems');
-const { getTodayDate } = require('../../services/planning');
+const { getTodayDate, formatDateRu } = require('../../services/planning');
+const { buildStaleDatePickerKeyboard } = require('../../utils/keyboards');
 const { getActiveSprint } = require('../../database/queries/sprints');
 const { getStreakInfo } = require('../../services/streak');
 const { getDayStats, formatSprintProgressBar } = require('../../services/analytics');
@@ -161,6 +162,29 @@ function registerTodayHandlers(bot) {
   bot.action(/^stale_today_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('📅');
     await handleStaleAction(ctx, ctx.match[1], 'today');
+  });
+
+  // Устаревшие задачи: выбрать другую дату
+  bot.action(/^stale_other_date_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const itemId = ctx.match[1];
+    await ctx.reply('📅 На какую дату перенести задачу?', buildStaleDatePickerKeyboard(itemId));
+  });
+
+  // Устаревшие задачи: дата выбрана из пикера
+  bot.action(/^stale_move_([^_]+)_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery('📅');
+    try {
+      const itemId = ctx.match[1];
+      const newDate = ctx.match[2];
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+
+      await updatePlanItem(itemId, { date: newDate });
+      await ctx.editMessageText(`📅 Задача перенесена на ${formatDateRu(newDate)}`);
+    } catch (error) {
+      console.error('[STALE] Move error:', error.message);
+    }
   });
 }
 
