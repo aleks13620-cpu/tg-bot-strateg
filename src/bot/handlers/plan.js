@@ -127,6 +127,30 @@ function registerPlanHandlers(bot) {
     ctx.session.selectedDate = dateParam;
     const dateLabel = formatDateRu(dateParam);
 
+    // Перенос задачи из недельного разбора
+    if (ctx.session.weeklyRescheduleItemId) {
+      const itemId = ctx.session.weeklyRescheduleItemId;
+      delete ctx.session.weeklyRescheduleItemId;
+      try {
+        const { data: user } = await getUserByTelegramId(ctx.from.id);
+        const { getPlanItemById, updatePlanItem, createPlanItemsWithDetails } = require('../../database/queries/planItems');
+        const { data: item } = await getPlanItemById(itemId);
+        if (item) {
+          await createPlanItemsWithDetails(user.id, dateParam, [{
+            text_raw: item.text_raw,
+            initiative_id: item.initiative_id,
+            is_strategic: item.is_strategic,
+          }]);
+          await updatePlanItem(itemId, { status: 'moved' });
+          await ctx.reply(`📅 Перенесено на ${dateLabel}: _${item.text_raw}_`, { parse_mode: 'Markdown' });
+        }
+      } catch (err) {
+        console.error('[WEEKLY_REVIEW] Reschedule error:', err.message);
+        await ctx.reply('Ошибка при переносе задачи.');
+      }
+      return;
+    }
+
     // Если есть ожидающее пересланное сообщение — создаём задачу
     if (ctx.session.pendingForwardText) {
       const text = ctx.session.pendingForwardText;

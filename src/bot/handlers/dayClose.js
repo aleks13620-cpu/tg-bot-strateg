@@ -9,6 +9,9 @@ const { saveCoachingAnswer, getLastUnansweredQuestion } = require('../../databas
 const { persistentKeyboard, KEYBOARD_BUTTONS } = require('../../utils/keyboards');
 const { sendPlanMessages, parseTimeInput, formatMinutesLabel } = require('./plan');
 const { updateStreak } = require('../../services/streak');
+const { getUnfinishedWeekItems } = require('../../services/reminder');
+const { createPlanItems } = require('../../database/queries/planItems');
+const { buildDatePickerKeyboard } = require('../../utils/keyboards');
 
 function registerDayCloseHandlers(bot) {
   // Reply keyboard: кнопка "Закрыть день"
@@ -220,6 +223,74 @@ function registerDayCloseHandlers(bot) {
     }
   });
 
+  // Недельный разбор несделанного
+  bot.action('action_weekly_review', async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+
+      const items = await getUnfinishedWeekItems(user.id);
+
+      if (items.length === 0) {
+        await ctx.reply('✅ Незавершённых задач за прошлую неделю нет.');
+        return;
+      }
+
+      await ctx.reply(`🔍 *Незавершённые задачи прошлой недели (${items.length}):*\n\nВыберите действие для каждой:`, { parse_mode: 'Markdown' });
+
+      for (const item of items) {
+        const tag = item.is_key_task ? '⭐ ' : item.is_strategic ? '🎯 ' : '🔥 ';
+        await ctx.reply(
+          `${tag}${item.text_raw}`,
+          Markup.inlineKeyboard([
+            [
+              Markup.button.callback('📅 Перенести', `weekly_reschedule_${item.id}`),
+              Markup.button.callback('✂️ Упростить', `weekly_simplify_${item.id}`),
+              Markup.button.callback('❌ Отменить',  `weekly_cancel_${item.id}`),
+            ],
+          ])
+        );
+      }
+
+      await ctx.reply(
+        '💡 _Совет: перенесите только то, что действительно важно сейчас. Остальное — отменяйте без сожаления._',
+        { parse_mode: 'Markdown' }
+      );
+    } catch (error) {
+      console.error('[WEEKLY_REVIEW] Error:', error.message);
+      await ctx.reply('Ошибка при загрузке задач.');
+    }
+  });
+
+  // Перенести задачу — показать дейтпикер
+  bot.action(/^weekly_reschedule_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const itemId = ctx.match[1];
+    ctx.session.weeklyRescheduleItemId = itemId;
+    await ctx.reply('📅 На какую дату перенести?', buildDatePickerKeyboard(14));
+  });
+
+  // Упростить задачу — запросить новый текст
+  bot.action(/^weekly_simplify_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const itemId = ctx.match[1];
+    ctx.session.awaitingWeeklySimplify = itemId;
+    await ctx.editMessageText(`✂️ ${ctx.callbackQuery.message.text}\n\nНапишите упрощённую версию задачи:`);
+  });
+
+  // Отменить задачу
+  bot.action(/^weekly_cancel_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const itemId = ctx.match[1];
+      await updatePlanItem(itemId, { status: 'moved' });
+      await ctx.editMessageText(`❌ Отменено: ${ctx.callbackQuery.message.text}`);
+    } catch (error) {
+      console.error('[WEEKLY_REVIEW] Cancel error:', error.message);
+    }
+  });
+
   // Причина пропуска задачи
   bot.action(/^skip_r_([^_]+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
@@ -291,6 +362,15 @@ function registerDayCloseHandlers(bot) {
       ctx.session.awaitingCoachingAnswer = null;
       ctx.session.awaitingActualTimeManual = null;
       return next();
+    }
+
+    // Упрощение задачи (недельный разбор)
+    if (ctx.session?.awaitingWeeklySimplify) {
+      const itemId = ctx.session.awaitingWeeklySimplify;
+      delete ctx.session.awaitingWeeklySimplify;
+      await updatePlanItem(itemId, { text_raw: ctx.message.text.trim() });
+      await ctx.reply(`✅ Задача упрощена: _${ctx.message.text.trim()}_`, { parse_mode: 'Markdown' });
+      return;
     }
 
     // Ручной ввод фактического времени

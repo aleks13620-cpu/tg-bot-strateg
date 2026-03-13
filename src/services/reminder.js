@@ -1,7 +1,7 @@
 const { supabase } = require('../../config/database');
 const { Markup } = require('telegraf');
 const { getTodayPlan, formatDateRu, getTodayDate } = require('./planning');
-const { getPlanItemsByDateRange, getPlanItemsByDate, getStaleItems } = require('../database/queries/planItems');
+const { getPlanItemsByDateRange, getPlanItemsByDate, getStaleItems, getPlanItemsByStatus } = require('../database/queries/planItems');
 const { getActiveSprint } = require('../database/queries/sprints');
 const { getStreakInfo } = require('./streak');
 const { getWeekStats, formatWeekStats, formatSprintProgressBar, getDayStats } = require('./analytics');
@@ -272,13 +272,24 @@ async function getWeeklyMessage(userId) {
 
   const financialGoal = activeSprint?.financial_goal || null;
   const sfiChallenge = activeSprint?.sfi_challenge || null;
-  const text = formatWeekStats(stats, weekStartStr, weekEndStr, prevStats, financialGoal, sfiChallenge);
+  let text = formatWeekStats(stats, weekStartStr, weekEndStr, prevStats, financialGoal, sfiChallenge);
+
+  // Таблица выполнения по направлениям
+  if (stats.byInitiativeStats && Object.keys(stats.byInitiativeStats).length > 0) {
+    text += '\n\n📌 *По направлениям:*\n';
+    for (const [title, s] of Object.entries(stats.byInitiativeStats)) {
+      const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0;
+      const warn = pct === 0 ? ' ⚠️' : '';
+      text += `${title}: ${s.done}/${s.total} (${pct}%)${warn}\n`;
+    }
+    text = text.trimEnd();
+  }
 
   const buttons = [
+    [Markup.button.callback('🔍 Разобрать несделанное', 'action_weekly_review')],
     [Markup.button.callback('📊 Подробная аналитика', 'action_week_stats_0')],
   ];
 
-  // Если есть финансовая цель — добавляем кнопку внесения прогресса
   if (financialGoal) {
     buttons.push([Markup.button.callback('💰 Внести прогресс по финцели', `action_finance_input_${weekStartStr}`)]);
   }
@@ -288,7 +299,30 @@ async function getWeeklyMessage(userId) {
     keyboard: Markup.inlineKeyboard(buttons),
     sprintId: activeSprint?.id || null,
     financialGoal,
+    weekStartStr,
+    weekEndStr,
   };
+}
+
+// Возвращает топ-3 незавершённых задачи за прошлую неделю (pending/skipped)
+async function getUnfinishedWeekItems(userId) {
+  const today = new Date();
+  const prevMonday = new Date(today);
+  const dow = today.getDay() || 7;
+  prevMonday.setDate(today.getDate() - dow - 6);
+  const prevSunday = new Date(prevMonday);
+  prevSunday.setDate(prevMonday.getDate() + 6);
+
+  const start = prevMonday.toISOString().split('T')[0];
+  const end = prevSunday.toISOString().split('T')[0];
+
+  const { data: items } = await getPlanItemsByDateRange(userId, start, end);
+  if (!items) return [];
+
+  return items
+    .filter((i) => i.status === 'pending' || i.status === 'skipped')
+    .sort((a, b) => (b.is_key_task ? 1 : 0) - (a.is_key_task ? 1 : 0) || a.date.localeCompare(b.date))
+    .slice(0, 3);
 }
 
 function getReminderType() {
@@ -335,4 +369,5 @@ module.exports = {
   getWeeklyMessage,
   getStaleMessage,
   getReminderType,
+  getUnfinishedWeekItems,
 };

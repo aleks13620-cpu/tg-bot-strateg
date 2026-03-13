@@ -187,6 +187,17 @@ async function getWeekStats(userId, weekStart, weekEnd) {
     }
   });
 
+  // Статистика по инициативам: done + total для отображения % выполнения
+  const byInitiativeStats = {};
+  items.forEach((item) => {
+    if (item.initiative) {
+      const title = item.initiative.title;
+      if (!byInitiativeStats[title]) byInitiativeStats[title] = { done: 0, total: 0 };
+      byInitiativeStats[title].total++;
+      if (item.status === 'done') byInitiativeStats[title].done++;
+    }
+  });
+
   const dayMap = {};
   items.forEach((item) => { dayMap[item.date] = true; });
 
@@ -216,6 +227,7 @@ async function getWeekStats(userId, weekStart, weekEnd) {
     daysWorked: Object.keys(dayMap).length,
     byInitiative,
     skipReasons,
+    byInitiativeStats,
   };
 }
 
