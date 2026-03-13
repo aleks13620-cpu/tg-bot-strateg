@@ -6,13 +6,12 @@ const { KEYBOARD_BUTTONS } = require('../../utils/keyboards');
 const onboardingScene = new Scenes.WizardScene(
   'onboarding',
 
-  // Шаг 0: Запрос цели спринта
+  // Шаг 0: Запрос цели
   async (ctx) => {
     await ctx.reply(
-      '🚀 *Создание спринта — шаг 1 из 3*\n\n' +
-      '*Спринт* — ваша главная цель на ближайшие 2 недели.\n\n' +
-      'Формулируйте как результат:\n' +
-      '_"Расширить ближний круг" · "Запустить MVP" · "Закрыть первые 3 клиента"_\n\n' +
+      '🚀 *Создание — шаг 1 из 3*\n\n' +
+      'Формулируйте цель как результат:\n' +
+      '_"Запустить MVP" · "Закрыть первые 3 клиента" · "Выйти на 300к/мес"_\n\n' +
       'Напишите цель одним предложением:',
       { parse_mode: 'Markdown' }
     );
@@ -20,15 +19,55 @@ const onboardingScene = new Scenes.WizardScene(
     return ctx.wizard.next();
   },
 
-  // Шаг 1: Сохраняем цель, запрашиваем первое направление
+  // Шаг 1 (двухпроходный):
+  // — pass 1: текст цели → показать выбор типа
+  // — pass 2: callback типа → ветвление
   async (ctx) => {
+    // Pass 2: выбор типа
+    if (ctx.callbackQuery) {
+      const data = ctx.callbackQuery.data;
+
+      if (data === 'onboarding_cancel') {
+        await ctx.answerCbQuery();
+        await ctx.reply('❌ Создание отменено.');
+        return ctx.scene.leave();
+      }
+
+      if (data === 'onboarding_type_sprint') {
+        await ctx.answerCbQuery();
+        ctx.wizard.state.sprintType = 'sprint';
+        await ctx.reply(
+          `✅ Цель: *${ctx.wizard.state.goal}*\n\n` +
+          '— — —\n\n' +
+          '📌 *Шаг 2 из 3 — Направления*\n\n' +
+          '*Направление* — ключевая область работы.\n' +
+          '_Пример: "Встречи с клиентами" · "Работа над продуктом"_\n\n' +
+          'Напишите первое направление:',
+          { parse_mode: 'Markdown' }
+        );
+        return ctx.wizard.next();
+      }
+
+      if (data === 'onboarding_type_monthly') {
+        await ctx.answerCbQuery();
+        ctx.wizard.state.sprintType = 'monthly_goal';
+        // Пропускаем шаг направлений — сразу к длительности
+        await showDurationPrompt(ctx);
+        return ctx.wizard.selectStep(3);
+      }
+
+      await ctx.answerCbQuery();
+      return;
+    }
+
+    // Pass 1: текст цели
     if (!ctx.message?.text) {
       await ctx.reply('Пожалуйста, напишите цель текстом.');
       return;
     }
 
     if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
-      await ctx.reply('❌ Создание спринта отменено.');
+      await ctx.reply('❌ Создание отменено.');
       return ctx.scene.leave();
     }
 
@@ -36,17 +75,20 @@ const onboardingScene = new Scenes.WizardScene(
 
     await ctx.reply(
       `✅ Цель: *${ctx.wizard.state.goal}*\n\n` +
-      '— — —\n\n' +
-      '📌 *Шаг 2 из 3 — Направления*\n\n' +
-      '*Направление* — ключевая область работы для достижения цели.\n' +
-      '_Пример: "Встречи с клиентами" · "Работа над продуктом" · "Личное развитие"_\n\n' +
-      'Напишите первое направление:',
-      { parse_mode: 'Markdown' }
+      'Выберите формат:',
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🗂 Обычный спринт (7–21 день)', 'onboarding_type_sprint')],
+          [Markup.button.callback('🎯 30-дневная цель с метриками', 'onboarding_type_monthly')],
+          [Markup.button.callback('❌ Отмена', 'onboarding_cancel')],
+        ]),
+      }
     );
-    return ctx.wizard.next();
+    return; // остаёмся на шаге 1
   },
 
-  // Шаг 2: Собираем направления (1–5), кнопка "Готово" доступна с первого
+  // Шаг 2: Собираем направления (1–5)
   async (ctx) => {
     if (ctx.callbackQuery) {
       if (ctx.callbackQuery.data === 'onboarding_done') {
@@ -56,7 +98,7 @@ const onboardingScene = new Scenes.WizardScene(
       }
       if (ctx.callbackQuery.data === 'onboarding_cancel') {
         await ctx.answerCbQuery();
-        await ctx.reply('❌ Создание спринта отменено.');
+        await ctx.reply('❌ Создание отменено.');
         return ctx.scene.leave();
       }
       await ctx.answerCbQuery();
@@ -69,7 +111,7 @@ const onboardingScene = new Scenes.WizardScene(
     }
 
     if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
-      await ctx.reply('❌ Создание спринта отменено.');
+      await ctx.reply('❌ Создание отменено.');
       return ctx.scene.leave();
     }
 
@@ -99,7 +141,7 @@ const onboardingScene = new Scenes.WizardScene(
     return;
   },
 
-  // Шаг 3: Получаем длительность, показываем подтверждение
+  // Шаг 3: Получаем длительность → показываем подтверждение
   async (ctx) => {
     if (!ctx.callbackQuery) return;
 
@@ -107,11 +149,16 @@ const onboardingScene = new Scenes.WizardScene(
 
     if (data === 'onboarding_cancel') {
       await ctx.answerCbQuery();
-      await ctx.reply('❌ Создание спринта отменено.');
+      await ctx.reply('❌ Создание отменено.');
       return ctx.scene.leave();
     }
 
-    const durMap = { onboarding_dur_7: 7, onboarding_dur_14: 14, onboarding_dur_21: 21 };
+    const durMap = {
+      onboarding_dur_7: 7,
+      onboarding_dur_14: 14,
+      onboarding_dur_21: 21,
+      onboarding_dur_30: 30,
+    };
     const duration = durMap[data];
     if (!duration) {
       await ctx.answerCbQuery();
@@ -121,14 +168,18 @@ const onboardingScene = new Scenes.WizardScene(
     await ctx.answerCbQuery();
     ctx.wizard.state.duration = duration;
 
-    const { goal, directions } = ctx.wizard.state;
+    const { goal, directions, sprintType } = ctx.wizard.state;
+    const isMonthly = sprintType === 'monthly_goal';
+
     let summary = `📋 *Подтверждение*\n\n`;
-    summary += `🎯 *Цель (${duration} дней):*\n${goal}\n\n`;
-    summary += `📌 *Направления:*\n`;
-    directions.forEach((d, i) => {
-      summary += `${i + 1}. ${d}\n`;
-    });
-    summary += `\nСоздать спринт?`;
+    summary += `🎯 *${isMonthly ? 'Цель 30 дней' : `Цель (${duration} дней)`}:*\n${goal}\n\n`;
+
+    if (!isMonthly && directions.length > 0) {
+      summary += `📌 *Направления:*\n`;
+      directions.forEach((d, i) => { summary += `${i + 1}. ${d}\n`; });
+    }
+
+    summary += `\nСоздать?`;
 
     try {
       await ctx.editMessageText(summary, {
@@ -156,12 +207,12 @@ const onboardingScene = new Scenes.WizardScene(
 
     if (ctx.callbackQuery.data === 'onboarding_cancel') {
       await ctx.answerCbQuery();
-      await ctx.reply('❌ Создание спринта отменено.');
+      await ctx.reply('❌ Создание отменено.');
       return ctx.scene.leave();
     }
 
     if (ctx.callbackQuery.data === 'onboarding_confirm') {
-      await ctx.answerCbQuery('Создаю спринт...');
+      await ctx.answerCbQuery('Создаю...');
 
       try {
         const telegramId = ctx.from.id;
@@ -172,30 +223,52 @@ const onboardingScene = new Scenes.WizardScene(
           return ctx.scene.leave();
         }
 
-        const { goal, directions, duration } = ctx.wizard.state;
-        const { data: sprint, error } = await startNewSprint(user.id, goal, directions, duration);
+        const { goal, directions, duration, sprintType } = ctx.wizard.state;
+        const { data: sprint, error } = await startNewSprint(
+          user.id, goal, directions || [], duration, null, sprintType || 'sprint'
+        );
 
         if (error) {
-          await ctx.reply('Ошибка при создании спринта. Попробуйте позже.');
+          await ctx.reply('Ошибка при создании. Попробуйте позже.');
           return ctx.scene.leave();
         }
 
-        const successMsg =
-          `🎉 *Спринт создан!*\n\n` +
-          `🎯 *Цель:* ${sprint.goal_text}\n` +
-          `📅 ${new Date(sprint.start_date).toLocaleDateString('ru-RU')} — ${new Date(sprint.end_date).toLocaleDateString('ru-RU')}\n` +
-          `📌 Направлений: ${sprint.initiatives.length}\n\n` +
-          `*Что дальше?*\n` +
-          `• Кнопка *"📋 Добавить задачи"* — планируйте день\n` +
-          `• Вечером закрывайте день кнопкой *"🌙 Закрыть день"*\n` +
-          `• Утром бот пришлёт напоминание с планом\n\n` +
-          `_Задачи по направлениям = стратегические. SFI показывает ваш баланс._`;
+        const isMonthly = sprintType === 'monthly_goal';
 
-        await ctx.reply(successMsg, { parse_mode: 'Markdown' });
-        console.log(`[ONBOARDING] Sprint ${sprint.id} created for user ${user.id}`);
-      } catch (error) {
-        console.error('[ONBOARDING] Error:', error.message);
-        await ctx.reply('Произошла ошибка при создании спринта.');
+        if (isMonthly) {
+          await ctx.reply(
+            `🎉 *30-дневная цель создана!*\n\n` +
+            `🎯 *Цель:* ${sprint.goal_text}\n` +
+            `📅 ${new Date(sprint.start_date).toLocaleDateString('ru-RU')} — ${new Date(sprint.end_date).toLocaleDateString('ru-RU')}\n\n` +
+            `Хотите добавить метрики для отслеживания прогресса?\n` +
+            `_(максимум 3: выручка, сделки, % выполнения и т.д.)_`,
+            {
+              parse_mode: 'Markdown',
+              ...Markup.inlineKeyboard([
+                [Markup.button.callback('➕ Добавить метрику', `metric_add_${sprint.id}`)],
+                [Markup.button.callback('⏭ Пропустить', 'metric_skip_add')],
+              ]),
+            }
+          );
+        } else {
+          const successMsg =
+            `🎉 *Спринт создан!*\n\n` +
+            `🎯 *Цель:* ${sprint.goal_text}\n` +
+            `📅 ${new Date(sprint.start_date).toLocaleDateString('ru-RU')} — ${new Date(sprint.end_date).toLocaleDateString('ru-RU')}\n` +
+            `📌 Направлений: ${sprint.initiatives.length}\n\n` +
+            `*Что дальше?*\n` +
+            `• Кнопка *"📋 Добавить задачи"* — планируйте день\n` +
+            `• Вечером закрывайте день кнопкой *"🌙 Закрыть день"*\n` +
+            `• Утром бот пришлёт напоминание с планом\n\n` +
+            `_Задачи по направлениям = стратегические. SFI показывает ваш баланс._`;
+
+          await ctx.reply(successMsg, { parse_mode: 'Markdown' });
+        }
+
+        console.log(`[ONBOARDING] Sprint ${sprint.id} (${sprintType}) created for user ${user.id}`);
+      } catch (err) {
+        console.error('[ONBOARDING] Error:', err.message);
+        await ctx.reply('Произошла ошибка при создании.');
       }
 
       return ctx.scene.leave();
@@ -206,18 +279,23 @@ const onboardingScene = new Scenes.WizardScene(
 );
 
 async function showDurationPrompt(ctx) {
+  const isMonthly = ctx.wizard.state.sprintType === 'monthly_goal';
+
+  const buttons = isMonthly
+    ? [[Markup.button.callback('30 дней', 'onboarding_dur_30')]]
+    : [[
+        Markup.button.callback('7 дней', 'onboarding_dur_7'),
+        Markup.button.callback('14 дней', 'onboarding_dur_14'),
+        Markup.button.callback('21 день', 'onboarding_dur_21'),
+      ]];
+
+  buttons.push([Markup.button.callback('❌ Отмена', 'onboarding_cancel')]);
+
   await ctx.reply(
-    '🕐 *Шаг 3 из 3 — Длительность*\n\nНа сколько дней ставим спринт?',
+    '🕐 *Шаг 3 из 3 — Длительность*\n\nНа сколько дней?',
     {
       parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [
-          Markup.button.callback('7 дней', 'onboarding_dur_7'),
-          Markup.button.callback('14 дней', 'onboarding_dur_14'),
-          Markup.button.callback('21 день', 'onboarding_dur_21'),
-        ],
-        [Markup.button.callback('❌ Отмена', 'onboarding_cancel')],
-      ]),
+      ...Markup.inlineKeyboard(buttons),
     }
   );
 }

@@ -10,6 +10,7 @@ const { registerUploadHandlers } = require('./handlers/upload');
 const { registerSprintsHandlers } = require('./handlers/sprints');
 const { registerTodayHandlers } = require('./handlers/today');
 const { registerFinanceHandlers } = require('./handlers/finance');
+const { registerMetricsHandlers } = require('./handlers/metrics');
 const { onboardingScene } = require('./scenes/onboarding');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -33,6 +34,7 @@ registerStartHandlers(bot);
 registerTodayHandlers(bot);
 registerSprintsHandlers(bot);
 registerFinanceHandlers(bot);
+registerMetricsHandlers(bot);
 registerPlanHandlers(bot);
 registerDayCloseHandlers(bot);
 registerProgressHandlers(bot);

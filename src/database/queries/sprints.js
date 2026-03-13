@@ -1,12 +1,13 @@
 const { supabase } = require('../../../config/database');
 
-async function createSprint(userId, startDate, endDate, goalText, financialGoal = null) {
+async function createSprint(userId, startDate, endDate, goalText, financialGoal = null, sprintType = 'sprint') {
   const record = {
     user_id: userId,
     start_date: startDate,
     end_date: endDate,
     goal_text: goalText,
     status: 'active',
+    type: sprintType,
   };
   if (financialGoal) record.financial_goal = financialGoal;
 
@@ -141,3 +142,4 @@ async function getAllSprints(userId) {
 }
 
 module.exports = { createSprint, getActiveSprint, getActiveSprints, getSprintById, getAllSprints, completeSprint, updateSprintGoal, updateSprintFinancialGoal, updateSprintSfiChallenge };
+

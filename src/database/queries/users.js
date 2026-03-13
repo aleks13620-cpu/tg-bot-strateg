@@ -98,4 +98,24 @@ function clearPendingPlanDate(userId) {
     .catch(() => {});
 }
 
-module.exports = { findOrCreateUser, getUserByTelegramId, touchUserActivity, checkHintAndMark, setPendingPlanDate, clearPendingPlanDate };
+async function updateUserSettings(userId, { reminderMorning, reminderEvening, remindersEnabled, timezone } = {}) {
+  const updates = {};
+  if (reminderMorning  !== undefined) updates.reminder_morning   = reminderMorning;
+  if (reminderEvening  !== undefined) updates.reminder_evening   = reminderEvening;
+  if (remindersEnabled !== undefined) updates.reminders_enabled  = remindersEnabled;
+  if (timezone         !== undefined) updates.timezone           = timezone;
+
+  const { data, error } = await supabase
+    .from('users')
+    .update(updates)
+    .eq('id', userId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[DB] Error updating user settings:', error.message);
+  }
+  return { data, error };
+}
+
+module.exports = { findOrCreateUser, getUserByTelegramId, touchUserActivity, checkHintAndMark, setPendingPlanDate, clearPendingPlanDate, updateUserSettings };

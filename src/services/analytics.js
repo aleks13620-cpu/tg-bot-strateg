@@ -323,6 +323,35 @@ function buildFinChartUrl(labels, pctValues) {
   return `https://quickchart.io/chart?c=${encodeURIComponent(json)}&width=500&height=300&backgroundColor=white`;
 }
 
+function formatMetricsBlock(metrics) {
+  if (!metrics || metrics.length === 0) return '_Метрики не добавлены._';
+
+  const unitLabel = { num: 'шт', rub: '₽', pct: '%', bool: '' };
+
+  return metrics.map((m) => {
+    const label = unitLabel[m.unit] || '';
+
+    if (m.unit === 'bool') {
+      const val = Number(m.current_value) === 1;
+      return `📌 *${m.title}*\n${val ? '✅ Да' : '⬜ Нет'}`;
+    }
+
+    const current = Number(m.current_value) || 0;
+    const target = Number(m.target_value) || 0;
+
+    if (target <= 0) {
+      return `📌 *${m.title}*\nТекущее: ${current}${label}`;
+    }
+
+    const pct = Math.min(100, Math.round((current / target) * 100));
+    const filled = Math.round(pct / 10);
+    const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
+    const icon = pct >= 100 ? '🏆' : pct >= 70 ? '🟢' : pct >= 40 ? '🟡' : '🔴';
+
+    return `📌 *${m.title}*\n${bar} ${pct}% ${icon}\n${current}${label} / ${target}${label}`;
+  }).join('\n\n');
+}
+
 module.exports = {
   getDayStats,
   getSprintStats,
@@ -336,4 +365,5 @@ module.exports = {
   parseFinancialGoal,
   formatFinProgressBar,
   buildFinChartUrl,
+  formatMetricsBlock,
 };

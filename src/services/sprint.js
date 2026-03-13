@@ -1,13 +1,13 @@
 const { createSprint, getActiveSprint } = require('../database/queries/sprints');
 const { createInitiative } = require('../database/queries/initiatives');
 
-async function startNewSprint(userId, goalText, initiativeTitles, durationDays = 14, financialGoal = null) {
+async function startNewSprint(userId, goalText, initiativeTitles, durationDays = 14, financialGoal = null, sprintType = 'sprint') {
   const startDate = new Date().toISOString().split('T')[0];
   const endDate = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000)
     .toISOString().split('T')[0];
 
   const { data: sprint, error: sprintError } = await createSprint(
-    userId, startDate, endDate, goalText, financialGoal
+    userId, startDate, endDate, goalText, financialGoal, sprintType
   );
 
   if (sprintError) {
@@ -32,7 +32,8 @@ function formatSprint(sprint) {
   const start = new Date(sprint.start_date).toLocaleDateString('ru-RU');
   const end = new Date(sprint.end_date).toLocaleDateString('ru-RU');
 
-  let text = `🎯 *Спринт: ${sprint.goal_text}*\n`;
+  const sprintLabel = sprint.type === 'monthly_goal' ? 'Цель 30 дней' : 'Спринт';
+  let text = `🎯 *${sprintLabel}: ${sprint.goal_text}*\n`;
   text += `📅 ${start} — ${end}\n`;
   if (sprint.financial_goal) {
     text += `💰 *Финансовая цель:* ${sprint.financial_goal}\n`;
@@ -57,7 +58,8 @@ function formatSprintCompact(sprint, index, total) {
   const end = new Date(sprint.end_date).toLocaleDateString('ru-RU');
   const initiatives = sprint.initiatives || [];
 
-  let text = `🎯 *Спринт ${index + 1}/${total}*\n`;
+  const sprintLabel = sprint.type === 'monthly_goal' ? 'Цель 30 дней' : `Спринт ${index + 1}/${total}`;
+  let text = `🎯 *${sprintLabel}*\n`;
   text += `*Цель:* ${sprint.goal_text}\n`;
   text += `📅 ${start} — ${end}\n`;
   if (sprint.financial_goal) {
