@@ -28,6 +28,9 @@ async function getDayStats(userId, date) {
     }
   });
 
+  const totalPlannedMinutes = items.reduce((sum, i) => sum + (i.planned_minutes || 0), 0);
+  const totalActualMinutes  = items.reduce((sum, i) => sum + (i.actual_minutes  || 0), 0);
+
   return {
     total,
     done: done.length,
@@ -37,6 +40,8 @@ async function getDayStats(userId, date) {
     fireDone,
     sfi,
     byInitiative,
+    totalPlannedMinutes,
+    totalActualMinutes,
   };
 }
 
@@ -94,6 +99,13 @@ function formatDayStats(stats, sfiChallenge = null) {
   }
   text += `\n🎯 Стратегические (по инициативам): ${stats.strategicDone}\n`;
   text += `🔥 Оперативные (текучка): ${stats.fireDone}\n`;
+  if (stats.totalActualMinutes > 0) {
+    const h = Math.floor(stats.totalActualMinutes / 60);
+    const m = stats.totalActualMinutes % 60;
+    const timeStr = h > 0 ? `${h}ч ${m > 0 ? m + 'мин' : ''}`.trim() : `${m}мин`;
+    text += `\n⏱ Сегодня: *${timeStr}*`;
+  }
+
   text += `\n📊 *SFI: ${stats.sfi}%*`;
 
   if (sfiChallenge) {

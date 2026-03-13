@@ -567,6 +567,29 @@ function registerPlanHandlers(bot) {
       console.error('[PLAN] Key task no error:', error.message);
     }
   });
+
+  // Плановое время: выбор или пропуск
+  bot.action(/^planned_time_(\d+)_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const minutes = parseInt(ctx.match[1], 10);
+      const itemId = ctx.match[2];
+
+      if (minutes > 0) {
+        const { updatePlanItem } = require('../../database/queries/planItems');
+        await updatePlanItem(itemId, { planned_minutes: minutes });
+        const label = minutes >= 60 ? `${minutes / 60} ч` : `${minutes} мин`;
+        await ctx.editMessageText(`⏱ Запланировано: ${label}`);
+      } else {
+        await ctx.editMessageText('⏭ Время не указано');
+      }
+
+      delete ctx.session.awaitingPlannedTime;
+      await finishQualification(ctx);
+    } catch (error) {
+      console.error('[PLAN] Planned time error:', error.message);
+    }
+  });
 }
 
 // Отправка плана несколькими сообщениями (по одному на спринт)
@@ -738,9 +761,33 @@ async function advanceToNextQualification(ctx) {
 
   if (idx < items.length) {
     await startQualificationForItem(ctx, items[idx], sprints);
+  } else if (items.length === 1) {
+    // Одиночная задача — спрашиваем плановое время перед завершением
+    await askPlannedTimeQuestion(ctx, items[0]);
   } else {
     await finishQualification(ctx);
   }
+}
+
+async function askPlannedTimeQuestion(ctx, item) {
+  ctx.session.awaitingPlannedTime = item.id;
+  await ctx.reply(
+    `⏱ Сколько времени планируете на задачу?\n_${item.text_raw}_`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback('15 мин', `planned_time_15_${item.id}`),
+          Markup.button.callback('30 мин', `planned_time_30_${item.id}`),
+          Markup.button.callback('1 час',  `planned_time_60_${item.id}`),
+        ],
+        [
+          Markup.button.callback('2 часа', `planned_time_120_${item.id}`),
+          Markup.button.callback('⏭ Пропустить', `planned_time_0_${item.id}`),
+        ],
+      ]),
+    }
+  );
 }
 
 async function askKeyTaskQuestion(ctx, item) {

@@ -47,6 +47,24 @@ function registerDayCloseHandlers(bot) {
       if (!user) return;
 
       const date = getTodayDate();
+
+      // Блок 4.3: показать незавершённые задачи (pending) — работал / нет
+      const { data: allItems } = await getPlanItemsByDate(user.id, date);
+      const pendingItems = (allItems || []).filter((i) => i.status === 'pending').slice(0, 3);
+      if (pendingItems.length > 0) {
+        await ctx.reply('❓ *Над этими задачами работали сегодня?*', { parse_mode: 'Markdown' });
+        for (const item of pendingItems) {
+          await ctx.reply(
+            item.text_raw,
+            Markup.inlineKeyboard([
+              [
+                Markup.button.callback('⏱ Работал', `worked_on_${item.id}`),
+                Markup.button.callback('Нет', `not_worked_${item.id}`),
+              ],
+            ])
+          );
+        }
+      }
       const [stats, { data: activeSprint }] = await Promise.all([
         getDayStats(user.id, date),
         getActiveSprint(user.id),
@@ -175,6 +193,65 @@ function registerDayCloseHandlers(bot) {
       await showCoaching(ctx, user.id, date);
     } catch (error) {
       console.error('[DAYCLOSE] Carry skip error:', error.message);
+    }
+  });
+
+  // Фактическое время на задачу
+  bot.action(/^actual_time_(\d+)_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const minutes = parseInt(ctx.match[1], 10);
+      const itemId = ctx.match[2];
+
+      if (minutes > 0) {
+        await updatePlanItem(itemId, {
+          actual_minutes: minutes,
+          last_worked_at: new Date().toISOString(),
+        });
+        const label = minutes >= 60 ? `${minutes / 60} ч` : `${minutes} мин`;
+        await ctx.editMessageText(`⏱ ${label} зафиксировано`);
+      } else {
+        await ctx.editMessageText('⏭ Время не зафиксировано');
+      }
+
+      delete ctx.session.awaitingActualTime;
+    } catch (error) {
+      console.error('[DAYCLOSE] Actual time error:', error.message);
+    }
+  });
+
+  // Работал над задачей (из блока незавершённых)
+  bot.action(/^worked_on_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const itemId = ctx.match[1];
+      await ctx.editMessageText(
+        `${ctx.callbackQuery.message.text}\n⏱ Сколько времени?`,
+        Markup.inlineKeyboard([
+          [
+            Markup.button.callback('15 мин', `actual_time_15_${itemId}`),
+            Markup.button.callback('30 мин', `actual_time_30_${itemId}`),
+            Markup.button.callback('45 мин', `actual_time_45_${itemId}`),
+          ],
+          [
+            Markup.button.callback('1 час',  `actual_time_60_${itemId}`),
+            Markup.button.callback('2 часа', `actual_time_120_${itemId}`),
+            Markup.button.callback('⏭ Пропустить', `actual_time_0_${itemId}`),
+          ],
+        ])
+      );
+    } catch (error) {
+      console.error('[DAYCLOSE] Worked on error:', error.message);
+    }
+  });
+
+  // Не работал над задачей (из блока незавершённых)
+  bot.action(/^not_worked_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      await ctx.editMessageText(`⏭ ${ctx.callbackQuery.message.text}`);
+    } catch (error) {
+      console.error('[DAYCLOSE] Not worked error:', error.message);
     }
   });
 
@@ -328,6 +405,26 @@ async function handleTaskStatus(ctx, itemId, status) {
 
     const icon = status === 'done' ? '✅' : '⏭';
     await ctx.editMessageText(`${icon} ${ctx.callbackQuery.message.text}`);
+
+    // Спрашиваем фактическое время только для выполненных задач
+    if (status === 'done') {
+      ctx.session.awaitingActualTime = itemId;
+      await ctx.reply(
+        '⏱ Сколько времени ушло на задачу?',
+        Markup.inlineKeyboard([
+          [
+            Markup.button.callback('15 мин', `actual_time_15_${itemId}`),
+            Markup.button.callback('30 мин', `actual_time_30_${itemId}`),
+            Markup.button.callback('45 мин', `actual_time_45_${itemId}`),
+          ],
+          [
+            Markup.button.callback('1 час',  `actual_time_60_${itemId}`),
+            Markup.button.callback('2 часа', `actual_time_120_${itemId}`),
+            Markup.button.callback('⏭ Пропустить', `actual_time_0_${itemId}`),
+          ],
+        ])
+      );
+    }
   } catch (error) {
     console.error('[DAYCLOSE] Status update error:', error.message);
   }
