@@ -190,6 +190,23 @@ async function getWeekStats(userId, weekStart, weekEnd) {
   const dayMap = {};
   items.forEach((item) => { dayMap[item.date] = true; });
 
+  // Подсчёт причин пропуска
+  const skipped = items.filter((i) => i.status === 'skipped' && i.skip_reason);
+  const skipReasons = { dcl: 0, ntt: 0, nrl: 0, lfc: 0, tbg: 0, urd: 0, oth: 0 };
+  const reasonCodeMap = {
+    'Осознанно отказался': 'dcl',
+    'Не хватило времени':  'ntt',
+    'Потеряла актуальность': 'nrl',
+    'Был расфокус':        'lfc',
+    'Слишком большая задача': 'tbg',
+    'Вытеснило срочное':   'urd',
+    'Другое':              'oth',
+  };
+  skipped.forEach((i) => {
+    const code = reasonCodeMap[i.skip_reason] || 'oth';
+    skipReasons[code] = (skipReasons[code] || 0) + 1;
+  });
+
   return {
     totalTasks: items.length,
     done: done.length,
@@ -198,6 +215,7 @@ async function getWeekStats(userId, weekStart, weekEnd) {
     sfi,
     daysWorked: Object.keys(dayMap).length,
     byInitiative,
+    skipReasons,
   };
 }
 
@@ -243,6 +261,40 @@ function formatWeekStats(stats, weekStart, weekEnd, prevStats, financialGoal = n
     const doneDiff = stats.done - prevStats.done;
     text += `\n\nvs прошлая неделя: SFI ${sfiDiff >= 0 ? '+' : ''}${sfiDiff}% ${sfiDiff >= 0 ? '📈' : '📉'}`;
     if (doneDiff !== 0) text += ` · выполнено ${doneDiff >= 0 ? '+' : ''}${doneDiff}`;
+  }
+
+  // Причины пропуска
+  if (stats.skipReasons) {
+    const REASON_LABELS = {
+      dcl: '✋ Осознанно отказался',
+      ntt: '⏰ Не хватило времени',
+      nrl: '📉 Потеряла актуальность',
+      lfc: '🌀 Был расфокус',
+      tbg: '📦 Слишком большая задача',
+      urd: '🚨 Вытеснило срочное',
+      oth: '💬 Другое',
+    };
+    const entries = Object.entries(stats.skipReasons).filter(([, v]) => v > 0);
+    if (entries.length > 0) {
+      text += '\n\n📉 *Причины пропуска:*\n';
+      entries.sort((a, b) => b[1] - a[1]).forEach(([code, cnt]) => {
+        text += `${REASON_LABELS[code]}: ${cnt}\n`;
+      });
+      // Коучинг-подсказка если одна причина >= 3 раз
+      const dominant = entries.find(([, cnt]) => cnt >= 3);
+      if (dominant) {
+        const tips = {
+          ntt: '💡 _Не хватает времени — попробуйте дробить задачи на меньшие шаги._',
+          lfc: '💡 _Расфокус мешает. Попробуйте выбирать 1–3 задачи в день._',
+          tbg: '💡 _Задачи слишком большие — разбивайте на подзадачи до 1 часа._',
+          urd: '💡 _Срочное вытесняет важное. Планируйте стратегические задачи на утро._',
+          nrl: '💡 _Много неактуальных задач — пересматривайте список раз в неделю._',
+        };
+        const tip = tips[dominant[0]];
+        if (tip) text += `\n${tip}`;
+      }
+      text = text.trimEnd();
+    }
   }
 
   return text;

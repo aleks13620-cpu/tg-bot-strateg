@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
 const { getUserByTelegramId, checkHintAndMark } = require('../../database/queries/users');
-const { getPlanItemsByDate, updatePlanItem, createPlanItemsWithDetails } = require('../../database/queries/planItems');
+const { getPlanItemsByDate, getPlanItemById, updatePlanItem, createPlanItemsWithDetails } = require('../../database/queries/planItems');
 const { getActiveSprint } = require('../../database/queries/sprints');
 const { getDayStats, formatDayStats } = require('../../services/analytics');
 const { getTodayDate, getTomorrowDate, formatDateRu } = require('../../services/planning');
@@ -220,6 +220,22 @@ function registerDayCloseHandlers(bot) {
     }
   });
 
+  // Причина пропуска задачи
+  bot.action(/^skip_r_([^_]+)_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const code = ctx.match[1];
+      const itemId = ctx.match[2];
+      const skipReason = SKIP_REASON_MAP[code];
+      if (skipReason) {
+        await updatePlanItem(itemId, { skip_reason: skipReason });
+      }
+      await ctx.editMessageText(`⏭ Причина: ${SKIP_REASON_LABELS[code] || 'Другое'}`);
+    } catch (error) {
+      console.error('[DAYCLOSE] Skip reason error:', error.message);
+    }
+  });
+
   // actual_time_manual_ITEMID — ввод времени вручную
   bot.action(/^actual_time_manual_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
@@ -420,17 +436,48 @@ async function handleTaskStatus(ctx, itemId, status) {
     const icon = status === 'done' ? '✅' : '⏭';
     await ctx.editMessageText(`${icon} ${ctx.callbackQuery.message.text}`);
 
-    // Спрашиваем фактическое время только для выполненных задач
     if (status === 'done') {
       ctx.session.awaitingActualTime = itemId;
-      await ctx.reply(
-        '⏱ Сколько времени ушло на задачу?',
-        buildActualTimeKeyboard(itemId)
-      );
+      await ctx.reply('⏱ Сколько времени ушло на задачу?', buildActualTimeKeyboard(itemId));
+    }
+
+    if (status === 'skipped') {
+      // Проверяем — может причина уже установлена (повторное закрытие дня)
+      const { data: item } = await getPlanItemById(itemId);
+      if (!item?.skip_reason) {
+        await ctx.reply(
+          '❓ Почему задача не выполнена?',
+          buildSkipReasonKeyboard(itemId)
+        );
+      }
     }
   } catch (error) {
     console.error('[DAYCLOSE] Status update error:', error.message);
   }
+}
+
+const SKIP_REASON_MAP = {
+  dcl: 'Осознанно отказался',
+  ntt: 'Не хватило времени',
+  nrl: 'Потеряла актуальность',
+  lfc: 'Был расфокус',
+  tbg: 'Слишком большая задача',
+  urd: 'Вытеснило срочное',
+  oth: 'Другое',
+};
+
+const SKIP_REASON_LABELS = SKIP_REASON_MAP;
+
+function buildSkipReasonKeyboard(itemId) {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('✋ Осознанно отказался', `skip_r_dcl_${itemId}`)],
+    [Markup.button.callback('⏰ Не хватило времени',  `skip_r_ntt_${itemId}`)],
+    [Markup.button.callback('📉 Потеряла актуальность', `skip_r_nrl_${itemId}`)],
+    [Markup.button.callback('🌀 Был расфокус',         `skip_r_lfc_${itemId}`)],
+    [Markup.button.callback('📦 Слишком большая задача', `skip_r_tbg_${itemId}`)],
+    [Markup.button.callback('🚨 Вытеснило срочное',   `skip_r_urd_${itemId}`)],
+    [Markup.button.callback('💬 Другое',              `skip_r_oth_${itemId}`)],
+  ]);
 }
 
 function buildActualTimeKeyboard(itemId) {
