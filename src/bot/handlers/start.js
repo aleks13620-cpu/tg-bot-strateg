@@ -128,10 +128,6 @@ function registerStartHandlers(bot) {
     );
   });
 
-  bot.action('action_settings', async (ctx) => {
-    await ctx.answerCbQuery();
-    await ctx.reply('🚧 Настройки будут доступны в следующем обновлении.');
-  });
 }
 
 module.exports = { registerStartHandlers };

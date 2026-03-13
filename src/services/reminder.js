@@ -10,13 +10,94 @@ const { checkHintAndMark } = require('../database/queries/users');
 async function getAllActiveUsers() {
   const { data, error } = await supabase
     .from('users')
-    .select('*');
+    .select('id, telegram_id, timezone, reminder_morning, reminder_evening, reminders_enabled, last_active_at, last_close_date, meta');
 
   if (error) {
     console.error('[REMINDER] Error getting users:', error.message);
     return [];
   }
   return data || [];
+}
+
+// Возвращает список { user, type } для пользователей которым нужно отправить напоминание прямо сейчас
+async function getUsersToRemindNow(nowUtc) {
+  const users = await getAllActiveUsers();
+  const result = [];
+
+  for (const user of users) {
+    if (user.reminders_enabled === false) continue;
+
+    const tz = user.timezone || 'Europe/Moscow';
+    const morningStr = user.reminder_morning || '08:00';
+    const eveningStr = user.reminder_evening || '18:00';
+
+    // Локальное время пользователя
+    let localHour, localMinute, localDow;
+    try {
+      const localStr = nowUtc.toLocaleString('en-US', { timeZone: tz, hour: 'numeric', minute: 'numeric', hour12: false, weekday: 'short' });
+      // Парсим "Mon 08:05" или "8:05 Mon"
+      const parts = localStr.split(/[,\s]+/).filter(Boolean);
+      let timeStr = parts.find((p) => p.includes(':'));
+      localDow = parts.find((p) => /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)/.test(p));
+      if (timeStr) {
+        const [h, m] = timeStr.split(':').map(Number);
+        localHour = h;
+        localMinute = m;
+      }
+    } catch {
+      // Fallback to UTC
+      localHour = nowUtc.getUTCHours();
+      localMinute = nowUtc.getUTCMinutes();
+      localDow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][nowUtc.getUTCDay()];
+    }
+
+    const totalNow = localHour * 60 + localMinute;
+    const [mH, mM] = morningStr.split(':').map(Number);
+    const [eH, eM] = eveningStr.split(':').map(Number);
+    const morningTotal = mH * 60 + mM;
+    const eveningTotal = eH * 60 + eM;
+    const WINDOW = 15; // ±15 минут
+
+    // Morning
+    if (Math.abs(totalNow - morningTotal) <= WINDOW) {
+      result.push({ user, type: 'morning' });
+      continue;
+    }
+
+    // Evening
+    if (Math.abs(totalNow - eveningTotal) <= WINDOW) {
+      result.push({ user, type: 'evening' });
+      continue;
+    }
+
+    // Midday: ~4 часа после утра (только будни)
+    const midTotal = morningTotal + 240;
+    const isWeekday = localDow && !['Sat','Sun'].includes(localDow.slice(0, 3));
+    if (isWeekday && Math.abs(totalNow - midTotal) <= WINDOW) {
+      result.push({ user, type: 'midday' });
+      continue;
+    }
+
+    // Weekly: суббота
+    if (localDow && localDow.startsWith('Sat') && Math.abs(totalNow - morningTotal) <= WINDOW + 60) {
+      // Используем morning window для weekly (отправляем утром в субботу)
+      result.push({ user, type: 'weekly' });
+      continue;
+    }
+
+    // Reactivation: понедельник UTC + last_active_at > 3 дней (без TZ)
+    const utcDow = nowUtc.getUTCDay(); // 1 = Monday
+    if (utcDow === 1 && Math.abs(nowUtc.getUTCHours() * 60 + nowUtc.getUTCMinutes() - 360) <= WINDOW) {
+      if (user.last_active_at) {
+        const daysSince = (nowUtc.getTime() - new Date(user.last_active_at).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSince > 3) {
+          result.push({ user, type: 'reactivation' });
+        }
+      }
+    }
+  }
+
+  return result;
 }
 
 async function getUserDayStatus(userId) {
@@ -362,6 +443,7 @@ async function getStaleMessage(userId) {
 
 module.exports = {
   getAllActiveUsers,
+  getUsersToRemindNow,
   getMorningMessage,
   getEveningMessage,
   getMidDayMessage,

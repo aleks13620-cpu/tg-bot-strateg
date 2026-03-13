@@ -1,6 +1,7 @@
 const { bot } = require('../src/bot/index');
 const {
   getAllActiveUsers,
+  getUsersToRemindNow,
   getMorningMessage,
   getEveningMessage,
   getMidDayMessage,
@@ -9,6 +10,42 @@ const {
   getStaleMessage,
   getReminderType,
 } = require('../src/services/reminder');
+
+async function sendForUser(user, type) {
+  let message = null;
+
+  if (type === 'morning') {
+    message = await getMorningMessage(user.id);
+  } else if (type === 'weekly') {
+    message = await getWeeklyMessage(user.id);
+  } else if (type === 'midday') {
+    message = await getMidDayMessage(user.id);
+  } else if (type === 'reactivation') {
+    message = await getReactivationMessage(user.id);
+  } else {
+    message = await getEveningMessage(user.id);
+  }
+
+  if (!message) return false;
+
+  await bot.telegram.sendMessage(user.telegram_id, message.text, {
+    parse_mode: 'Markdown',
+    ...message.keyboard,
+  });
+
+  // Утром — дополнительно устаревшие задачи
+  if (type === 'morning') {
+    const staleMsg = await getStaleMessage(user.id);
+    if (staleMsg) {
+      await bot.telegram.sendMessage(user.telegram_id, staleMsg.text, {
+        parse_mode: 'Markdown',
+        ...staleMsg.keyboard,
+      });
+    }
+  }
+
+  return true;
+}
 
 module.exports = async (req, res) => {
   console.log('[REMIND] Reminder endpoint called');
@@ -20,57 +57,34 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const users = await getAllActiveUsers();
-    const type = req.query.type || getReminderType();
+    const type = req.query.type || 'check';
+    let sent = 0, skipped = 0, failed = 0;
 
-    let sent = 0;
-    let skipped = 0;
-    let failed = 0;
+    // Per-user режим: определяем кому и что отправить по их TZ и настройкам
+    if (type === 'check') {
+      const pairs = await getUsersToRemindNow(new Date());
+      console.log(`[REMIND] check mode: ${pairs.length} reminders to send`);
 
-    for (const user of users) {
-      try {
-        let message = null;
-
-        if (type === 'morning') {
-          message = await getMorningMessage(user.id);
-        } else if (type === 'weekly') {
-          message = await getWeeklyMessage(user.id);
-        } else if (type === 'midday') {
-          message = await getMidDayMessage(user.id);
-        } else if (type === 'reactivation') {
-          message = await getReactivationMessage(user.id);
-        } else {
-          message = await getEveningMessage(user.id);
+      for (const { user, type: userType } of pairs) {
+        try {
+          const ok = await sendForUser(user, userType);
+          ok ? sent++ : skipped++;
+        } catch (err) {
+          console.error(`[REMIND] Failed for user ${user.telegram_id}:`, err.message);
+          failed++;
         }
-
-        if (!message) {
-          skipped++;
-        } else {
-          await bot.telegram.sendMessage(
-            user.telegram_id,
-            message.text,
-            { parse_mode: 'Markdown', ...message.keyboard }
-          );
-          sent++;
+      }
+    } else {
+      // Обратная совместимость: явный type для ручного запуска
+      const users = await getAllActiveUsers();
+      for (const user of users) {
+        try {
+          const ok = await sendForUser(user, type);
+          ok ? sent++ : skipped++;
+        } catch (err) {
+          console.error(`[REMIND] Failed for user ${user.telegram_id}:`, err.message);
+          failed++;
         }
-
-        // Утром — дополнительно отправляем устаревшие задачи
-        if (type === 'morning') {
-          const staleMsg = await getStaleMessage(user.id);
-          if (staleMsg) {
-            await bot.telegram.sendMessage(
-              user.telegram_id,
-              staleMsg.text,
-              { parse_mode: 'Markdown', ...staleMsg.keyboard }
-            );
-          }
-          if (!message) continue;
-        }
-
-        if (!message) continue;
-      } catch (err) {
-        console.error(`[REMIND] Failed for user ${user.telegram_id}:`, err.message);
-        failed++;
       }
     }
 

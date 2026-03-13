@@ -11,7 +11,10 @@ const { registerSprintsHandlers } = require('./handlers/sprints');
 const { registerTodayHandlers } = require('./handlers/today');
 const { registerFinanceHandlers } = require('./handlers/finance');
 const { registerMetricsHandlers } = require('./handlers/metrics');
+const { registerReviewHandlers } = require('./handlers/review');
+const { registerSettingsHandlers } = require('./handlers/settings');
 const { onboardingScene } = require('./scenes/onboarding');
+const { quarterlyReviewScene } = require('./scenes/quarterlyReview');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -25,7 +28,7 @@ bot.catch((err, ctx) => {
 bot.use(loggerMiddleware);
 
 // Session + Scenes
-const stage = new Scenes.Stage([onboardingScene]);
+const stage = new Scenes.Stage([onboardingScene, quarterlyReviewScene]);
 bot.use(session());
 bot.use(stage.middleware());
 
@@ -35,6 +38,8 @@ registerTodayHandlers(bot);
 registerSprintsHandlers(bot);
 registerFinanceHandlers(bot);
 registerMetricsHandlers(bot);
+registerSettingsHandlers(bot);
+registerReviewHandlers(bot);
 registerPlanHandlers(bot);
 registerDayCloseHandlers(bot);
 registerProgressHandlers(bot);
