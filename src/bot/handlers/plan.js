@@ -205,6 +205,23 @@ function registerPlanHandlers(bot) {
       return next();
     }
 
+    // Ручной ввод планового времени
+    if (ctx.session?.awaitingPlannedTimeManual) {
+      const itemId = ctx.session.awaitingPlannedTimeManual;
+      const minutes = parseTimeInput(ctx.message.text);
+      if (!minutes) {
+        await ctx.reply('Не понял. Введите минуты числом (например: *45*) или формат *1:30*:', { parse_mode: 'Markdown' });
+        return;
+      }
+      delete ctx.session.awaitingPlannedTimeManual;
+      const { updatePlanItem } = require('../../database/queries/planItems');
+      await updatePlanItem(itemId, { planned_minutes: minutes });
+      await ctx.reply(`✅ Запланировано: ${formatMinutesLabel(minutes)}`);
+      const items = ctx.session?.qualificationItems || [];
+      if (items.length > 0) await finishQualification(ctx);
+      return;
+    }
+
     // Ввод даты вручную
     if (ctx.session?.awaitingDateInput) {
       ctx.session.awaitingDateInput = false;
@@ -568,6 +585,15 @@ function registerPlanHandlers(bot) {
     }
   });
 
+  // Плановое время: ввести вручную
+  bot.action(/^planned_time_manual_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const itemId = ctx.match[1];
+    ctx.session.awaitingPlannedTimeManual = itemId;
+    delete ctx.session.awaitingPlannedTime;
+    await ctx.reply('✏️ Введите время в минутах (например: *45*) или в формате *1:30*:', { parse_mode: 'Markdown' });
+  });
+
   // Плановое время: выбор или пропуск
   bot.action(/^planned_time_(\d+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
@@ -783,6 +809,7 @@ async function askPlannedTimeQuestion(ctx, item) {
         ],
         [
           Markup.button.callback('2 часа', `planned_time_120_${item.id}`),
+          Markup.button.callback('✏️ Ввести', `planned_time_manual_${item.id}`),
           Markup.button.callback('⏭ Пропустить', `planned_time_0_${item.id}`),
         ],
       ]),
@@ -893,4 +920,32 @@ async function getUncoveredInitiativesMessage(userId, date) {
   }
 }
 
-module.exports = { registerPlanHandlers, sendPlanMessages, getUncoveredInitiativesMessage };
+// Парсит ввод времени: "45" → 45, "1:30" → 90, "1.5" → 90
+function parseTimeInput(text) {
+  const t = text.trim().replace(',', '.');
+  if (/^\d+$/.test(t)) {
+    const v = parseInt(t, 10);
+    return v > 0 && v <= 600 ? v : null;
+  }
+  const colonMatch = t.match(/^(\d+):(\d{2})$/);
+  if (colonMatch) {
+    const mins = parseInt(colonMatch[1], 10) * 60 + parseInt(colonMatch[2], 10);
+    return mins > 0 && mins <= 600 ? mins : null;
+  }
+  const floatMatch = t.match(/^(\d+)\.(\d+)$/);
+  if (floatMatch) {
+    const mins = Math.round(parseFloat(t) * 60);
+    return mins > 0 && mins <= 600 ? mins : null;
+  }
+  return null;
+}
+
+function formatMinutesLabel(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h > 0 && m > 0) return `${h}ч ${m}мин`;
+  if (h > 0) return `${h}ч`;
+  return `${m}мин`;
+}
+
+module.exports = { registerPlanHandlers, sendPlanMessages, getUncoveredInitiativesMessage, parseTimeInput, formatMinutesLabel };

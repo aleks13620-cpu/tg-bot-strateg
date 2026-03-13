@@ -1,5 +1,20 @@
 const { supabase } = require('../../config/database');
 
+// Форматирование числа с пробелами как разделителями тысяч: 1000000 → "1 000 000"
+function fmtNum(n) {
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00A0');
+}
+
+// Форматирование минут: 90 → "1ч 30мин", 60 → "1ч", 45 → "45мин"
+function fmtMinutes(minutes) {
+  if (!minutes || minutes <= 0) return '0мин';
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h > 0 && m > 0) return `${h}ч ${m}мин`;
+  if (h > 0) return `${h}ч`;
+  return `${m}мин`;
+}
+
 async function getDayStats(userId, date) {
   const { data: items, error } = await supabase
     .from('plan_items')
@@ -28,8 +43,10 @@ async function getDayStats(userId, date) {
     }
   });
 
-  const totalPlannedMinutes = items.reduce((sum, i) => sum + (i.planned_minutes || 0), 0);
-  const totalActualMinutes  = items.reduce((sum, i) => sum + (i.actual_minutes  || 0), 0);
+  const totalPlannedMinutes    = items.reduce((sum, i) => sum + (i.planned_minutes || 0), 0);
+  const totalActualMinutes     = items.reduce((sum, i) => sum + (i.actual_minutes  || 0), 0);
+  const strategicActualMinutes = done.filter((i) => i.is_strategic).reduce((sum, i) => sum + (i.actual_minutes || 0), 0);
+  const fireActualMinutes      = done.filter((i) => !i.is_strategic).reduce((sum, i) => sum + (i.actual_minutes || 0), 0);
 
   return {
     total,
@@ -42,6 +59,8 @@ async function getDayStats(userId, date) {
     byInitiative,
     totalPlannedMinutes,
     totalActualMinutes,
+    strategicActualMinutes,
+    fireActualMinutes,
   };
 }
 
@@ -100,10 +119,11 @@ function formatDayStats(stats, sfiChallenge = null) {
   text += `\n🎯 Стратегические (по инициативам): ${stats.strategicDone}\n`;
   text += `🔥 Оперативные (текучка): ${stats.fireDone}\n`;
   if (stats.totalActualMinutes > 0) {
-    const h = Math.floor(stats.totalActualMinutes / 60);
-    const m = stats.totalActualMinutes % 60;
-    const timeStr = h > 0 ? `${h}ч ${m > 0 ? m + 'мин' : ''}`.trim() : `${m}мин`;
-    text += `\n⏱ Сегодня: *${timeStr}*`;
+    const parts = [];
+    if (stats.strategicActualMinutes > 0) parts.push(`🎯 стратегия: *${fmtMinutes(stats.strategicActualMinutes)}*`);
+    if (stats.fireActualMinutes > 0)      parts.push(`🔥 текучка: *${fmtMinutes(stats.fireActualMinutes)}*`);
+    text += `\n⏱ Время: ${parts.join(' · ')}`;
+    text += ` (итого ${fmtMinutes(stats.totalActualMinutes)})`;
   }
 
   text += `\n📊 *SFI: ${stats.sfi}%*`;
@@ -310,8 +330,8 @@ function formatFinProgressBar(actual, target, symbol) {
   const pct = Math.min(100, Math.round((actual / target) * 100));
   const filled = Math.round(pct / 10);
   const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
-  const actualFmt = Math.round(actual).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  const targetFmt = Math.round(target).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const actualFmt = fmtNum(actual);
+  const targetFmt = fmtNum(target);
   const icon = pct >= 100 ? '🏆' : pct >= 70 ? '🟢' : pct >= 40 ? '🟡' : '🔴';
   return `${bar} *${pct}%* ${icon}\n${actualFmt} / ${targetFmt} ${symbol}`;
 }
@@ -352,7 +372,7 @@ function formatMetricsBlock(metrics) {
     const target = Number(m.target_value) || 0;
 
     if (target <= 0) {
-      return `📌 *${m.title}*\nТекущее: ${current}${label}`;
+      return `📌 *${m.title}*\nТекущее: ${fmtNum(current)}${label}`;
     }
 
     const pct = Math.min(100, Math.round((current / target) * 100));
@@ -360,7 +380,7 @@ function formatMetricsBlock(metrics) {
     const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
     const icon = pct >= 100 ? '🏆' : pct >= 70 ? '🟢' : pct >= 40 ? '🟡' : '🔴';
 
-    return `📌 *${m.title}*\n${bar} ${pct}% ${icon}\n${current}${label} / ${target}${label}`;
+    return `📌 *${m.title}*\n${bar} ${pct}% ${icon}\n${fmtNum(current)}${label} / ${fmtNum(target)}${label}`;
   }).join('\n\n');
 }
 
@@ -378,4 +398,6 @@ module.exports = {
   formatFinProgressBar,
   buildFinChartUrl,
   formatMetricsBlock,
+  fmtNum,
+  fmtMinutes,
 };

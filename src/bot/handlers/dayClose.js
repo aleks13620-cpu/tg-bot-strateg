@@ -7,7 +7,7 @@ const { getTodayDate, getTomorrowDate, formatDateRu } = require('../../services/
 const { generateCoaching } = require('../../services/coaching/simpleCoaching');
 const { saveCoachingAnswer, getLastUnansweredQuestion } = require('../../database/queries/coaching');
 const { persistentKeyboard, KEYBOARD_BUTTONS } = require('../../utils/keyboards');
-const { sendPlanMessages } = require('./plan');
+const { sendPlanMessages, parseTimeInput, formatMinutesLabel } = require('./plan');
 const { updateStreak } = require('../../services/streak');
 
 function registerDayCloseHandlers(bot) {
@@ -220,6 +220,15 @@ function registerDayCloseHandlers(bot) {
     }
   });
 
+  // actual_time_manual_ITEMID — ввод времени вручную
+  bot.action(/^actual_time_manual_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const itemId = ctx.match[1];
+    ctx.session.awaitingActualTimeManual = itemId;
+    delete ctx.session.awaitingActualTime;
+    await ctx.reply('✏️ Введите время в минутах (например: *45*) или в формате *1:30*:', { parse_mode: 'Markdown' });
+  });
+
   // Работал над задачей (из блока незавершённых)
   bot.action(/^worked_on_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
@@ -227,18 +236,7 @@ function registerDayCloseHandlers(bot) {
       const itemId = ctx.match[1];
       await ctx.editMessageText(
         `${ctx.callbackQuery.message.text}\n⏱ Сколько времени?`,
-        Markup.inlineKeyboard([
-          [
-            Markup.button.callback('15 мин', `actual_time_15_${itemId}`),
-            Markup.button.callback('30 мин', `actual_time_30_${itemId}`),
-            Markup.button.callback('45 мин', `actual_time_45_${itemId}`),
-          ],
-          [
-            Markup.button.callback('1 час',  `actual_time_60_${itemId}`),
-            Markup.button.callback('2 часа', `actual_time_120_${itemId}`),
-            Markup.button.callback('⏭ Пропустить', `actual_time_0_${itemId}`),
-          ],
-        ])
+        buildActualTimeKeyboard(itemId)
       );
     } catch (error) {
       console.error('[DAYCLOSE] Worked on error:', error.message);
@@ -270,13 +268,29 @@ function registerDayCloseHandlers(bot) {
     await ctx.reply('Хорошего вечера!', persistentKeyboard);
   });
 
-  // Обработка текстового ответа на коучинг
+  // Обработка текстового ответа на коучинг и ручной ввод времени
   bot.on('text', async (ctx, next) => {
     if (ctx.message.text.startsWith('/')) return next();
     if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
       ctx.session.awaitingCoachingAnswer = null;
+      ctx.session.awaitingActualTimeManual = null;
       return next();
     }
+
+    // Ручной ввод фактического времени
+    if (ctx.session?.awaitingActualTimeManual) {
+      const itemId = ctx.session.awaitingActualTimeManual;
+      const minutes = parseTimeInput(ctx.message.text);
+      if (!minutes) {
+        await ctx.reply('Не понял. Введите минуты числом (например: *45*) или формат *1:30*:', { parse_mode: 'Markdown' });
+        return;
+      }
+      delete ctx.session.awaitingActualTimeManual;
+      await updatePlanItem(itemId, { actual_minutes: minutes, last_worked_at: new Date().toISOString() });
+      await ctx.reply(`✅ Зафиксировано: ${formatMinutesLabel(minutes)}`);
+      return;
+    }
+
     if (!ctx.session?.awaitingCoachingAnswer) return next();
 
     try {
@@ -411,23 +425,28 @@ async function handleTaskStatus(ctx, itemId, status) {
       ctx.session.awaitingActualTime = itemId;
       await ctx.reply(
         '⏱ Сколько времени ушло на задачу?',
-        Markup.inlineKeyboard([
-          [
-            Markup.button.callback('15 мин', `actual_time_15_${itemId}`),
-            Markup.button.callback('30 мин', `actual_time_30_${itemId}`),
-            Markup.button.callback('45 мин', `actual_time_45_${itemId}`),
-          ],
-          [
-            Markup.button.callback('1 час',  `actual_time_60_${itemId}`),
-            Markup.button.callback('2 часа', `actual_time_120_${itemId}`),
-            Markup.button.callback('⏭ Пропустить', `actual_time_0_${itemId}`),
-          ],
-        ])
+        buildActualTimeKeyboard(itemId)
       );
     }
   } catch (error) {
     console.error('[DAYCLOSE] Status update error:', error.message);
   }
+}
+
+function buildActualTimeKeyboard(itemId) {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('15 мин', `actual_time_15_${itemId}`),
+      Markup.button.callback('30 мин', `actual_time_30_${itemId}`),
+      Markup.button.callback('45 мин', `actual_time_45_${itemId}`),
+    ],
+    [
+      Markup.button.callback('1 час',   `actual_time_60_${itemId}`),
+      Markup.button.callback('2 часа',  `actual_time_120_${itemId}`),
+      Markup.button.callback('✏️ Ввести', `actual_time_manual_${itemId}`),
+      Markup.button.callback('⏭ Пропустить', `actual_time_0_${itemId}`),
+    ],
+  ]);
 }
 
 module.exports = { registerDayCloseHandlers };
