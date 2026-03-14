@@ -64,10 +64,10 @@ async function getDayStats(userId, date) {
   };
 }
 
-async function getSprintStats(userId, sprintStartDate, sprintEndDate) {
+async function getSprintStats(userId, sprintStartDate, sprintEndDate, sprintId = null) {
   const { data: items, error } = await supabase
     .from('plan_items')
-    .select('*')
+    .select('*, initiative:initiatives(sprint_id)')
     .eq('user_id', userId)
     .gte('date', sprintStartDate)
     .lte('date', sprintEndDate);
@@ -77,21 +77,28 @@ async function getSprintStats(userId, sprintStartDate, sprintEndDate) {
     return null;
   }
 
-  const done = items.filter((i) => i.status === 'done');
+  // Если передан sprintId — считаем только задачи этого спринта:
+  // задачи с инициативой → только если инициатива принадлежит данному спринту
+  // задачи без инициативы → считаем (свободные задачи в диапазоне дат)
+  const filtered = sprintId
+    ? items.filter((i) => !i.initiative_id || (i.initiative && i.initiative.sprint_id === sprintId))
+    : items;
+
+  const done = filtered.filter((i) => i.status === 'done');
   const strategicDone = done.filter((i) => i.is_strategic).length;
   const fireDone = done.filter((i) => !i.is_strategic).length;
   const sfi = done.length > 0 ? Math.round((strategicDone / done.length) * 100) : 0;
 
   // Группировка по дням
   const dayMap = {};
-  items.forEach((item) => {
+  filtered.forEach((item) => {
     if (!dayMap[item.date]) dayMap[item.date] = [];
     dayMap[item.date].push(item);
   });
   const daysWorked = Object.keys(dayMap).length;
 
   return {
-    totalTasks: items.length,
+    totalTasks: filtered.length,
     done: done.length,
     strategicDone,
     fireDone,

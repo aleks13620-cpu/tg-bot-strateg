@@ -78,7 +78,7 @@ function registerSprintsHandlers(bot) {
       // Формируем карточку завершения
       try {
         const [stats, streakInfo, { data: lastFinance }] = await Promise.all([
-          sprint ? getSprintStats(user.id, sprint.start_date, sprint.end_date) : Promise.resolve(null),
+          sprint ? getSprintStats(user.id, sprint.start_date, sprint.end_date, sprint.id) : Promise.resolve(null),
           getStreakInfo(user.id),
           sprint ? getLastFinancialProgress(user.id, sprintId) : Promise.resolve({ data: null }),
         ]);

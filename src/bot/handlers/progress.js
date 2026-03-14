@@ -28,7 +28,7 @@ function registerProgressHandlers(bot) {
         return;
       }
 
-      const stats = await getSprintStats(user.id, sprint.start_date, sprint.end_date);
+      const stats = await getSprintStats(user.id, sprint.start_date, sprint.end_date, sprint.id);
       const statusLabel = sprint.status === 'active' ? '🟢 Активный' : '✅ Завершён';
       const [, sm, sd] = sprint.start_date.split('-');
       const [, em, ed] = sprint.end_date.split('-');
@@ -71,7 +71,7 @@ function registerProgressHandlers(bot) {
       const sprintDataList = await Promise.all(
         sprints.map(async (sprint) => ({
           sprint,
-          stats: await getSprintStats(user.id, sprint.start_date, sprint.end_date),
+          stats: await getSprintStats(user.id, sprint.start_date, sprint.end_date, sprint.id),
         }))
       );
 
