@@ -1,19 +1,5 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/**/*.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    { "src": "/api/webhook", "dest": "/api/webhook.js" },
-    { "src": "/api/remind", "dest": "/api/remind.js" },
-    { "src": "/api/webapp/sprints/active", "dest": "/api/webapp/sprints.js" },
-    { "src": "/api/webapp/analytics/focus", "dest": "/api/webapp/analytics.js" },
-    { "src": "/api/webapp/tasks/today", "dest": "/api/webapp/tasks.js" },
-    { "src": "/api/webapp/metrics", "dest": "/api/webapp/metrics.js" },
-    { "src": "/app/assets/(.*)", "dest": "/public/app/assets/$1" },
-    { "src": "/app(.*)", "dest": "/public/app/index.html" }
+  "rewrites": [
+    { "source": "/app/:path*", "destination": "/app/index.html" }
   ]
 }
