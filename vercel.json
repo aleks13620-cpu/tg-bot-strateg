@@ -4,16 +4,20 @@
     {
       "src": "api/**/*.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "webapp/package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "dist" }
     }
   ],
   "routes": [
-    {
-      "src": "/api/webhook",
-      "dest": "/api/webhook.js"
-    },
-    {
-      "src": "/api/remind",
-      "dest": "/api/remind.js"
-    }
+    { "src": "/api/webhook", "dest": "/api/webhook.js" },
+    { "src": "/api/remind", "dest": "/api/remind.js" },
+    { "src": "/api/webapp/sprints/active", "dest": "/api/webapp/sprints.js" },
+    { "src": "/api/webapp/analytics/focus", "dest": "/api/webapp/analytics.js" },
+    { "src": "/api/webapp/tasks/today", "dest": "/api/webapp/tasks.js" },
+    { "src": "/api/webapp/metrics", "dest": "/api/webapp/metrics.js" },
+    { "src": "/app(.*)", "dest": "/webapp/$1" }
   ]
 }

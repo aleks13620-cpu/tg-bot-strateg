@@ -145,6 +145,9 @@ async function showProgress(ctx) {
       }
     }
     buttons.push([Markup.button.callback('📅 Итоги недели', 'action_week_stats_0')]);
+    if (process.env.WEBAPP_URL) {
+      buttons.push([Markup.button.webApp('📊 Дашборд', process.env.WEBAPP_URL)]);
+    }
 
     const suffix = sprints && sprints.length > 0
       ? '\n\n📈 *Выбери спринт для статистики:*'
