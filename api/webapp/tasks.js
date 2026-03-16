@@ -20,6 +20,7 @@ module.exports = async (req, res) => {
     id: item.id,
     title: item.text_raw,
     direction: item.initiative ? item.initiative.title : null,
+    sprint_id: item.initiative?.sprint_id || null,
     is_strategic: item.is_strategic || false,
     status: item.status,
     is_day_task: item.is_key_task || false,

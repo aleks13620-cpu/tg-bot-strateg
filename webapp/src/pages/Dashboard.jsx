@@ -15,7 +15,7 @@ const PERIOD_KEY = 'strategist_period';
 export function Dashboard() {
   const [period, setPeriod] = useState(() => localStorage.getItem(PERIOD_KEY) || 'sprint');
 
-  const { sprint, loading: sprintLoading } = useSprint();
+  const { sprints, primarySprint, loading: sprintLoading } = useSprint();
   const { data: focus, loading: focusLoading } = useFocus(period);
 
   const handlePeriodChange = (p) => {
@@ -29,7 +29,11 @@ export function Dashboard() {
     <div className="pb-20">
       <Header period={period} onPeriodChange={handlePeriodChange} />
       <div className="px-4 py-3 space-y-3">
-        <SprintCard sprint={sprint} />
+        {sprints.length === 0 ? (
+          <SprintCard sprint={null} />
+        ) : (
+          sprints.map((s) => <SprintCard key={s.id} sprint={s} />)
+        )}
 
         {focusLoading ? (
           <Loader text="Загружаем статистику..." />
@@ -38,11 +42,13 @@ export function Dashboard() {
             <FocusStats data={focus} />
             <TimeStats data={focus} />
             <DirectionsList directions={focus?.by_direction} />
-            {sprint?.type === 'monthly_goal' && <MetricsList sprintId={sprint.id} />}
+            {sprints.filter((s) => s.type === 'monthly_goal').map((s) => (
+              <MetricsList key={s.id} sprintId={s.id} />
+            ))}
           </>
         )}
 
-        <TasksList />
+        <TasksList sprints={sprints} />
       </div>
     </div>
   );

@@ -28,7 +28,20 @@ function TaskRow({ task }) {
   );
 }
 
-export function TasksList() {
+function TaskGroup({ title, tasks }) {
+  return (
+    <div className="mb-3 last:mb-0">
+      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+        {title}
+      </p>
+      <div className="divide-y divide-gray-100 dark:divide-gray-700">
+        {tasks.map((t) => <TaskRow key={t.id} task={t} />)}
+      </div>
+    </div>
+  );
+}
+
+export function TasksList({ sprints = [] }) {
   const [tasks, setTasks] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -50,14 +63,47 @@ export function TasksList() {
     );
   }
 
+  // Build sprint lookup map
+  const sprintMap = Object.fromEntries(sprints.map((s) => [s.id, s]));
+
+  // Group tasks by sprint_id
+  const groups = {};
+  const noSprint = [];
+
+  for (const task of tasks) {
+    if (task.sprint_id && sprintMap[task.sprint_id]) {
+      if (!groups[task.sprint_id]) groups[task.sprint_id] = [];
+      groups[task.sprint_id].push(task);
+    } else {
+      noSprint.push(task);
+    }
+  }
+
+  const hasGroups = sprints.length > 0 && (Object.keys(groups).length > 0 || noSprint.length > 0);
+
   return (
     <Card>
-      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
+      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">
         📋 Сегодня: {tasks.length} задач
       </h3>
-      <div className="divide-y divide-gray-100 dark:divide-gray-700">
-        {tasks.map((t) => <TaskRow key={t.id} task={t} />)}
-      </div>
+
+      {hasGroups ? (
+        <>
+          {sprints.map((s) => {
+            const group = groups[s.id];
+            if (!group || group.length === 0) return null;
+            return <TaskGroup key={s.id} title={s.goal} tasks={group} />;
+          })}
+          {noSprint.length > 0 && (
+            <TaskGroup title="Общие задачи" tasks={noSprint} />
+          )}
+        </>
+      ) : (
+        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+          {tasks.map((t) => <TaskRow key={t.id} task={t} />)}
+        </div>
+      )}
+
       {summary && (
         <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
           Выполнено: {summary.completed}/{summary.total} · Стратегия: {summary.strategic} · Вне: {summary.off_strategy}

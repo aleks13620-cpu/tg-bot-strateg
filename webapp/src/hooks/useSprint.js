@@ -2,20 +2,20 @@ import { useState, useEffect } from 'react';
 import { api } from '../api/client.js';
 
 export function useSprint() {
-  const [sprint, setSprint] = useState(null);
-  const [metrics, setMetrics] = useState([]);
+  const [sprints, setSprints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     api.getActiveSprint()
-      .then(({ sprint, metrics }) => {
-        setSprint(sprint);
-        setMetrics(metrics || []);
+      .then(({ sprints }) => {
+        setSprints(sprints || []);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
 
-  return { sprint, metrics, loading, error };
+  const primarySprint = sprints[0] || null;
+
+  return { sprints, primarySprint, loading, error };
 }
