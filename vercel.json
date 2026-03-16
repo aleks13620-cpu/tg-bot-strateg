@@ -13,8 +13,7 @@
     { "src": "/api/webapp/analytics/focus", "dest": "/api/webapp/analytics.js" },
     { "src": "/api/webapp/tasks/today", "dest": "/api/webapp/tasks.js" },
     { "src": "/api/webapp/metrics", "dest": "/api/webapp/metrics.js" },
-    { "src": "/app/assets/(.*)", "dest": "/webapp/dist/assets/$1" },
-    { "src": "/app/(.*)", "dest": "/webapp/dist/index.html" },
-    { "src": "/app", "dest": "/webapp/dist/index.html" }
+    { "src": "/app/assets/(.*)", "dest": "/public/app/assets/$1" },
+    { "src": "/app(.*)", "dest": "/public/app/index.html" }
   ]
 }
