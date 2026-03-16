@@ -43,6 +43,7 @@ function registerSprintsHandlers(bot) {
         await ctx.reply(text, {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
+            [Markup.button.callback('➕ Добавить инициативу', `add_init_${sprint.id}`)],
             [Markup.button.callback('✏️ Редактировать', `edit_sprint_${sprint.id}`)],
             [Markup.button.callback('✅ Завершить', `complete_sprint_${sprint.id}`)],
           ]),
