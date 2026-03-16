@@ -4,11 +4,6 @@
     {
       "src": "api/**/*.js",
       "use": "@vercel/node"
-    },
-    {
-      "src": "webapp/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "dist" }
     }
   ],
   "routes": [
@@ -18,6 +13,8 @@
     { "src": "/api/webapp/analytics/focus", "dest": "/api/webapp/analytics.js" },
     { "src": "/api/webapp/tasks/today", "dest": "/api/webapp/tasks.js" },
     { "src": "/api/webapp/metrics", "dest": "/api/webapp/metrics.js" },
-    { "src": "/app(.*)", "dest": "/webapp/$1" }
+    { "src": "/app/assets/(.*)", "dest": "/webapp/dist/assets/$1" },
+    { "src": "/app/(.*)", "dest": "/webapp/dist/index.html" },
+    { "src": "/app", "dest": "/webapp/dist/index.html" }
   ]
 }
