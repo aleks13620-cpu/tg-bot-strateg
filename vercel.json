@@ -1,5 +1,9 @@
 {
   "rewrites": [
-    { "source": "/app/:path*", "destination": "/app/index.html" }
+    { "source": "/api/webapp/sprints/active", "destination": "/api/webapp/sprints" },
+    { "source": "/api/webapp/analytics/focus", "destination": "/api/webapp/analytics" },
+    { "source": "/api/webapp/tasks/today",     "destination": "/api/webapp/tasks" },
+    { "source": "/api/webapp/metrics",         "destination": "/api/webapp/metrics" },
+    { "source": "/app/:path*",                 "destination": "/app/index.html" }
   ]
 }
