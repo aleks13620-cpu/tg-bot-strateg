@@ -1,12 +1,19 @@
 const { Markup } = require('telegraf');
 const { getUserByTelegramId } = require('../../database/queries/users');
-const { getActiveSprints, getSprintById, completeSprint, updateSprintGoal, updateSprintFinancialGoal, updateSprintSfiChallenge } = require('../../database/queries/sprints');
+const { getActiveSprints, getSprintById, completeSprint, updateSprintGoal, updateSprintFinancialGoal, updateSprintSfiChallenge, archiveSprint, updateSprintEndDate } = require('../../database/queries/sprints');
 const { createInitiative, getInitiativesBySprint, updateInitiativeTitle, deleteInitiative } = require('../../database/queries/initiatives');
 const { formatSprintCompact, formatSprintCompletionCard } = require('../../services/sprint');
 const { getSprintStats } = require('../../services/analytics');
 const { getStreakInfo } = require('../../services/streak');
 const { getLastFinancialProgress } = require('../../database/queries/finance');
 const { KEYBOARD_BUTTONS, persistentKeyboard } = require('../../utils/keyboards');
+const { getTodayDate, formatDateRu } = require('../../services/planning');
+
+function addDaysToDate(dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split('T')[0];
+}
 
 function registerSprintsHandlers(bot) {
   // Reply keyboard: кнопка "🎯 Спринты"
@@ -30,15 +37,47 @@ function registerSprintsHandlers(bot) {
         return;
       }
 
-      const header = sprints.length === 1
+      const today = getTodayDate();
+      const expiredSprints = sprints.filter((s) => s.end_date < today);
+      const currentSprints = sprints.filter((s) => s.end_date >= today);
+
+      // Show expired sprint cards first
+      for (const sprint of expiredSprints) {
+        const endDate = new Date(sprint.end_date + 'T00:00:00Z');
+        const nowDate = new Date(today + 'T00:00:00Z');
+        const daysOverdue = Math.round((nowDate - endDate) / (1000 * 60 * 60 * 24));
+        const endFormatted = formatDateRu(sprint.end_date);
+
+        const text =
+          `⚠️ *Спринт просрочен на ${daysOverdue} дн.*\n` +
+          `🎯 Цель: ${sprint.goal_text}\n` +
+          `📅 Завершился: ${endFormatted}`;
+
+        await ctx.reply(text, {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback('📦 Архивировать', `archive_sprint_${sprint.id}`),
+              Markup.button.callback('📅 Продолжить', `extend_sprint_${sprint.id}`),
+            ],
+          ]),
+        });
+      }
+
+      if (currentSprints.length === 0) {
+        console.log(`[SPRINTS] Shown ${expiredSprints.length} expired sprints for user ${user.id}`);
+        return;
+      }
+
+      const header = currentSprints.length === 1
         ? '🎯 *Активный спринт:*'
-        : `🎯 *Активных спринтов: ${sprints.length}*`;
+        : `🎯 *Активных спринтов: ${currentSprints.length}*`;
 
       await ctx.reply(header, { parse_mode: 'Markdown' });
 
-      for (let i = 0; i < sprints.length; i++) {
-        const sprint = sprints[i];
-        const text = formatSprintCompact(sprint, i, sprints.length);
+      for (let i = 0; i < currentSprints.length; i++) {
+        const sprint = currentSprints[i];
+        const text = formatSprintCompact(sprint, i, currentSprints.length);
 
         await ctx.reply(text, {
           parse_mode: 'Markdown',
@@ -50,7 +89,7 @@ function registerSprintsHandlers(bot) {
         });
       }
 
-      console.log(`[SPRINTS] Shown ${sprints.length} sprints for user ${user.id}`);
+      console.log(`[SPRINTS] Shown ${currentSprints.length} current + ${expiredSprints.length} expired sprints for user ${user.id}`);
     } catch (error) {
       console.error('[SPRINTS] Error:', error.message);
       await ctx.reply('Ошибка при загрузке спринтов.');
@@ -314,6 +353,92 @@ function registerSprintsHandlers(bot) {
     } catch (error) {
       console.error('[SPRINTS] Add init prompt error:', error.message);
       await ctx.reply('Ошибка.');
+    }
+  });
+
+  // Archive an expired sprint
+  bot.action(/^archive_sprint_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery('📦');
+    try {
+      const sprintId = ctx.match[1];
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+
+      const { data: sprint } = await getSprintById(sprintId);
+      const { error } = await archiveSprint(sprintId);
+      if (error) {
+        await ctx.reply('Ошибка при архивировании спринта.');
+        return;
+      }
+
+      await ctx.editMessageText('📦 Архивирую спринт...');
+
+      try {
+        const [stats, streakInfo, { data: lastFinance }] = await Promise.all([
+          sprint ? getSprintStats(user.id, sprint.start_date, sprint.end_date, sprint.id) : Promise.resolve(null),
+          getStreakInfo(user.id),
+          sprint ? getLastFinancialProgress(user.id, sprintId) : Promise.resolve({ data: null }),
+        ]);
+
+        const card = formatSprintCompletionCard(sprint, stats, streakInfo.max, lastFinance);
+        await ctx.reply(card + '\n\n📦 Спринт архивирован', { parse_mode: 'Markdown' });
+      } catch (cardError) {
+        console.error('[SPRINTS] Archive card error:', cardError.message);
+        await ctx.reply('📦 Спринт архивирован');
+      }
+
+      console.log(`[SPRINTS] Sprint ${sprintId} archived for user ${user.id}`);
+    } catch (error) {
+      console.error('[SPRINTS] Archive error:', error.message);
+      await ctx.reply('Ошибка при архивировании спринта.');
+    }
+  });
+
+  // Extend an expired sprint — show duration options
+  bot.action(/^extend_sprint_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const sprintId = ctx.match[1];
+      await ctx.editMessageReplyMarkup(
+        Markup.inlineKeyboard([
+          [
+            Markup.button.callback('+7 дн', `extend_days_7_${sprintId}`),
+            Markup.button.callback('+14 дн', `extend_days_14_${sprintId}`),
+            Markup.button.callback('+30 дн', `extend_days_30_${sprintId}`),
+          ],
+        ]).reply_markup
+      );
+    } catch (error) {
+      console.error('[SPRINTS] Extend prompt error:', error.message);
+      await ctx.reply('Ошибка.');
+    }
+  });
+
+  // Apply extension days
+  bot.action(/^extend_days_(\d+)_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery('📅');
+    try {
+      const days = parseInt(ctx.match[1], 10);
+      const sprintId = ctx.match[2];
+
+      const { data: sprint } = await getSprintById(sprintId);
+      if (!sprint) {
+        await ctx.reply('Спринт не найден.');
+        return;
+      }
+
+      const newEndDate = addDaysToDate(sprint.end_date, days);
+      const { error } = await updateSprintEndDate(sprintId, newEndDate);
+      if (error) {
+        await ctx.reply('Ошибка при продлении спринта.');
+        return;
+      }
+
+      await ctx.editMessageText(`✅ Спринт продлён до ${formatDateRu(newEndDate)}`);
+      console.log(`[SPRINTS] Sprint ${sprintId} extended by ${days} days to ${newEndDate}`);
+    } catch (error) {
+      console.error('[SPRINTS] Extend days error:', error.message);
+      await ctx.reply('Ошибка при продлении спринта.');
     }
   });
 

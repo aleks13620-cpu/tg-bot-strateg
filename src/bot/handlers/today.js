@@ -9,6 +9,12 @@ const { getDayStats, formatSprintProgressBar } = require('../../services/analyti
 const { getStaleMessage } = require('../../services/reminder');
 const { getUncoveredInitiativesMessage } = require('./plan');
 
+// Escape special chars for MarkdownV2
+function escV2(text) {
+  if (text === null || text === undefined) return '';
+  return String(text).replace(/[_*[\]()~`>#+=|{}.!\-\\]/g, '\\$&');
+}
+
 function sortItems(items) {
   return [...items].sort((a, b) => {
     if (a.is_key_task && !b.is_key_task) return -1;
@@ -17,15 +23,23 @@ function sortItems(items) {
   });
 }
 
-function formatTodayList(items) {
+function formatTodayList(items, stats) {
   if (items.length === 0) {
-    return '📋 На сегодня задач нет.\n\nИспользуйте кнопку *«📋 Добавить задачи»* чтобы запланировать день.';
+    return '📋 На сегодня задач нет\\.\n\nИспользуйте кнопку *«📋 Добавить задачи»* чтобы запланировать день\\.';
   }
 
-  let text = '📋 *План на сегодня:*\n\n';
-  let num = 1;
+  // Completion line at top
+  const done = items.filter((i) => i.status === 'done').length;
+  const total = items.length;
+  let completionLine = `✅ Выполнено: ${done}/${total}`;
+  if (stats && stats.done > 0) {
+    const sfiIcon = stats.sfi >= 70 ? '🟢' : stats.sfi >= 50 ? '🟡' : stats.sfi > 0 ? '🔴' : '';
+    completionLine += ` · SFI ${stats.sfi}%${sfiIcon ? ' ' + sfiIcon : ''}`;
+  }
+  if (done === total && total > 0) completionLine += ' 🎉';
+  completionLine += '\n\n';
 
-  // Группируем: по инициативам, по стратегии без инициативы, вне стратегии
+  // Group items by initiative / strategic / fire
   const byInitiative = {};
   const strategicItems = [];
   const fireItems = [];
@@ -43,40 +57,81 @@ function formatTodayList(items) {
   });
 
   const hasStrategic = Object.keys(byInitiative).length > 0 || strategicItems.length > 0;
+  let taskList = '';
+  let num = 1;
 
   for (const [title, groupItems] of Object.entries(byInitiative)) {
-    text += `📌 *${title}:*\n`;
+    taskList += `📌 *${escV2(title)}:*\n`;
     for (const item of groupItems) {
-      const icon = item.status === 'done' ? '✅' : item.status === 'skipped' ? '⏭' : '⬜';
-      text += `  ${num}. ${icon} ${item.text_raw}${item.is_key_task ? ' ⭐' : ''}\n`;
+      const taskText = escV2(item.text_raw) + (item.is_key_task ? ' ⭐' : '');
+      if (item.status === 'done') {
+        taskList += `  ${num}\\. ~${taskText}~ ✅\n`;
+      } else if (item.status === 'skipped') {
+        taskList += `  ${num}\\. ⏭ ${taskText}\n`;
+      } else {
+        taskList += `  ${num}\\. ⬜ ${taskText}\n`;
+      }
       num++;
     }
   }
 
   if (strategicItems.length > 0) {
-    text += `📊 *По стратегии:*\n`;
+    taskList += `📊 *По стратегии:*\n`;
     for (const item of strategicItems) {
-      const icon = item.status === 'done' ? '✅' : item.status === 'skipped' ? '⏭' : '⬜';
-      text += `  ${num}. ${icon} ${item.text_raw}${item.is_key_task ? ' ⭐' : ''}\n`;
+      const taskText = escV2(item.text_raw) + (item.is_key_task ? ' ⭐' : '');
+      if (item.status === 'done') {
+        taskList += `  ${num}\\. ~${taskText}~ ✅\n`;
+      } else if (item.status === 'skipped') {
+        taskList += `  ${num}\\. ⏭ ${taskText}\n`;
+      } else {
+        taskList += `  ${num}\\. ⬜ ${taskText}\n`;
+      }
       num++;
     }
   }
 
   if (fireItems.length > 0) {
-    if (hasStrategic) text += `\n🔥 *Вне стратегии:*\n`;
+    if (hasStrategic) taskList += `\n🔥 *Вне стратегии:*\n`;
     for (const item of fireItems) {
-      const icon = item.status === 'done' ? '✅' : item.status === 'skipped' ? '⏭' : '⬜';
-      text += `  ${num}. ${icon} ${item.text_raw}${item.is_key_task ? ' ⭐' : ''}\n`;
+      const taskText = escV2(item.text_raw) + (item.is_key_task ? ' ⭐' : '');
+      if (item.status === 'done') {
+        taskList += `  ${num}\\. ~${taskText}~ ✅\n`;
+      } else if (item.status === 'skipped') {
+        taskList += `  ${num}\\. ⏭ ${taskText}\n`;
+      } else {
+        taskList += `  ${num}\\. ⬜ ${taskText}\n`;
+      }
       num++;
     }
   }
 
-  const done = items.filter((i) => i.status === 'done').length;
-  const total = items.length;
-  text += `\n✅ Выполнено: ${done}/${total}`;
-  if (done === total && total > 0) text += ' 🎉';
+  return completionLine + taskList;
+}
 
-  return text;
+function buildSprintFooter(sprint, streak, sfi) {
+  if (!sprint && (!streak || streak.current < 2)) return '';
+
+  let footer = '\n────────────────\n';
+
+  if (sprint) {
+    footer += `🎯 *${escV2(sprint.goal_text)}*\n`;
+    footer += escV2(formatSprintProgressBar(sprint, sfi)) + '\n';
+
+    // Expired sprint notice
+    const today = new Date().toISOString().split('T')[0];
+    if (sprint.end_date < today) {
+      const end = new Date(sprint.end_date + 'T00:00:00Z');
+      const now = new Date(today + 'T00:00:00Z');
+      const daysAgo = Math.round((now - end) / (1000 * 60 * 60 * 24));
+      footer += `\n⚠️ Спринт завершился ${daysAgo} дн\\. назад — откройте /sprints чтобы архивировать или продолжить\n`;
+    }
+  }
+
+  if (streak && streak.current >= 2) {
+    footer += `🔥 Стрик: ${streak.current} дн\\.\n`;
+  }
+
+  return footer;
 }
 
 function buildTodayKeyboard(items) {
@@ -94,19 +149,31 @@ function buildTodayKeyboard(items) {
   return Markup.inlineKeyboard(buttons);
 }
 
+function buildTimePromptKeyboard(itemId) {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('15 мин', `today_time_15_${itemId}`),
+      Markup.button.callback('30 мин', `today_time_30_${itemId}`),
+      Markup.button.callback('45 мин', `today_time_45_${itemId}`),
+    ],
+    [
+      Markup.button.callback('1 ч', `today_time_60_${itemId}`),
+      Markup.button.callback('1.5 ч', `today_time_90_${itemId}`),
+      Markup.button.callback('Пропустить', `today_time_skip_${itemId}`),
+    ],
+  ]);
+}
+
 function registerTodayHandlers(bot) {
-  // /today — показать план на сегодня с кнопками
   bot.command('today', async (ctx) => {
     await showToday(ctx);
   });
 
-  // Inline-кнопка из утреннего напоминания
   bot.action('action_today_plan', async (ctx) => {
     await ctx.answerCbQuery();
     await showToday(ctx);
   });
 
-  // /done — быстро отметить первую pending-задачу выполненной
   bot.command('done', async (ctx) => {
     try {
       const { data: user } = await getUserByTelegramId(ctx.from.id);
@@ -134,44 +201,107 @@ function registerTodayHandlers(bot) {
     }
   });
 
-  // Отметить задачу выполненной через инлайн-кнопку
+  // Mark done via inline button — update status, refresh dashboard, then show time prompt
   bot.action(/^today_done_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('✅');
-    await handleTodayStatus(ctx, ctx.match[1], 'done');
+    const itemId = ctx.match[1];
+    try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+
+      const date = getTodayDate();
+      const { data: itemsBefore } = await getPlanItemsByDate(user.id, date);
+      const item = itemsBefore.find((i) => i.id === itemId);
+
+      await updatePlanItem(itemId, { status: 'done' });
+
+      // Rebuild and edit the dashboard message
+      const [{ data: items }, { data: sprint }, streak, stats] = await Promise.all([
+        getPlanItemsByDate(user.id, date),
+        getActiveSprint(user.id),
+        getStreakInfo(user.id),
+        getDayStats(user.id, date),
+      ]);
+
+      const sfi = stats && stats.done > 0 ? stats.sfi : null;
+      const text = formatTodayList(items, stats) + buildSprintFooter(sprint, streak, sfi);
+      const keyboard = buildTodayKeyboard(items);
+
+      const editOptions = { parse_mode: 'MarkdownV2' };
+      if (keyboard) Object.assign(editOptions, keyboard);
+
+      try {
+        await ctx.editMessageText(text, editOptions);
+      } catch {
+        // ignore edit errors (e.g. message unchanged)
+      }
+
+      // Send time prompt
+      const taskName = item ? item.text_raw : 'задача';
+      const shortName = taskName.length > 40 ? taskName.slice(0, 37) + '...' : taskName;
+      await ctx.reply(`⏱ Сколько времени потратил на «${shortName}»?`, buildTimePromptKeyboard(itemId));
+    } catch (error) {
+      console.error('[TODAY] done error:', error.message);
+    }
   });
 
-  // Пропустить задачу через инлайн-кнопку
+  // Skip via inline button
   bot.action(/^today_skip_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('⏭');
     await handleTodayStatus(ctx, ctx.match[1], 'skipped');
   });
 
-  // Устаревшие задачи: выполнено
+  // Time tracking: save minutes
+  bot.action(/^today_time_(\d+)_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery('⏱');
+    try {
+      const minutes = parseInt(ctx.match[1], 10);
+      const itemId = ctx.match[2];
+      await updatePlanItem(itemId, { actual_minutes: minutes });
+      await ctx.editMessageText('⏱ Время сохранено!');
+      await showToday(ctx);
+    } catch (error) {
+      console.error('[TODAY] Time save error:', error.message);
+    }
+  });
+
+  // Time tracking: skip
+  bot.action(/^today_time_skip_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      await ctx.editMessageText('⏱ Время не записано.');
+      await showToday(ctx);
+    } catch (error) {
+      console.error('[TODAY] Time skip error:', error.message);
+    }
+  });
+
+  // Stale tasks: done
   bot.action(/^stale_done_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('✅');
     await handleStaleAction(ctx, ctx.match[1], 'done');
   });
 
-  // Устаревшие задачи: пропустить
+  // Stale tasks: skip
   bot.action(/^stale_skip_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('⏭');
     await handleStaleAction(ctx, ctx.match[1], 'skipped');
   });
 
-  // Устаревшие задачи: перенести на сегодня
+  // Stale tasks: move to today
   bot.action(/^stale_today_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('📅');
     await handleStaleAction(ctx, ctx.match[1], 'today');
   });
 
-  // Устаревшие задачи: выбрать другую дату
+  // Stale tasks: pick other date
   bot.action(/^stale_other_date_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     const itemId = ctx.match[1];
     await ctx.reply('📅 На какую дату перенести задачу?', buildStaleDatePickerKeyboard(itemId));
   });
 
-  // Устаревшие задачи: дата выбрана из пикера
+  // Stale tasks: date picked
   bot.action(/^stale_move_([^_]+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('📅');
     try {
@@ -204,21 +334,11 @@ async function showToday(ctx) {
       getDayStats(user.id, date),
     ]);
 
-    let header = '';
-    if (sprint) {
-      const sfi = stats && stats.done > 0 ? stats.sfi : null;
-      header += `🎯 *${sprint.goal_text}*\n`;
-      header += formatSprintProgressBar(sprint, sfi) + '\n';
-    }
-    if (streak.current >= 2) {
-      header += `🔥 Стрик: ${streak.current} дн.\n`;
-    }
-    if (header) header += '\n';
-
-    const text = header + formatTodayList(items);
+    const sfi = stats && stats.done > 0 ? stats.sfi : null;
+    const text = formatTodayList(items, stats) + buildSprintFooter(sprint, streak, sfi);
     const keyboard = buildTodayKeyboard(items);
 
-    const options = { parse_mode: 'Markdown' };
+    const options = { parse_mode: 'MarkdownV2' };
     if (keyboard) Object.assign(options, keyboard);
 
     await ctx.reply(text, options);
@@ -248,13 +368,19 @@ async function handleTodayStatus(ctx, itemId, status) {
       return;
     }
 
-    // Перерисовываем список
     const date = getTodayDate();
-    const { data: items } = await getPlanItemsByDate(user.id, date);
-    const text = formatTodayList(items);
+    const [{ data: items }, { data: sprint }, streak, stats] = await Promise.all([
+      getPlanItemsByDate(user.id, date),
+      getActiveSprint(user.id),
+      getStreakInfo(user.id),
+      getDayStats(user.id, date),
+    ]);
+
+    const sfi = stats && stats.done > 0 ? stats.sfi : null;
+    const text = formatTodayList(items, stats) + buildSprintFooter(sprint, streak, sfi);
     const keyboard = buildTodayKeyboard(items);
 
-    const editOptions = { parse_mode: 'Markdown' };
+    const editOptions = { parse_mode: 'MarkdownV2' };
     if (keyboard) Object.assign(editOptions, keyboard);
 
     try {
@@ -280,7 +406,6 @@ async function handleStaleAction(ctx, itemId, action) {
       await updatePlanItem(itemId, { date: getTodayDate() });
     }
 
-    // Перерисовываем сообщение с оставшимися stale задачами
     const staleMsg = await getStaleMessage(user.id);
     if (!staleMsg) {
       await ctx.editMessageText('✅ Все устаревшие задачи обработаны!');

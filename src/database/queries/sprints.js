@@ -141,5 +141,33 @@ async function getAllSprints(userId) {
   return { data: data || [], error: null };
 }
 
-module.exports = { createSprint, getActiveSprint, getActiveSprints, getSprintById, getAllSprints, completeSprint, updateSprintGoal, updateSprintFinancialGoal, updateSprintSfiChallenge };
+async function archiveSprint(sprintId) {
+  const { data, error } = await supabase
+    .from('sprints')
+    .update({ status: 'archived' })
+    .eq('id', sprintId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[DB] Error archiving sprint:', error.message);
+  }
+  return { data, error };
+}
+
+async function updateSprintEndDate(sprintId, newEndDate) {
+  const { data, error } = await supabase
+    .from('sprints')
+    .update({ end_date: newEndDate })
+    .eq('id', sprintId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[DB] Error updating sprint end_date:', error.message);
+  }
+  return { data, error };
+}
+
+module.exports = { createSprint, getActiveSprint, getActiveSprints, getSprintById, getAllSprints, completeSprint, updateSprintGoal, updateSprintFinancialGoal, updateSprintSfiChallenge, archiveSprint, updateSprintEndDate };
 
