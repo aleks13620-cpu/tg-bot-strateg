@@ -66,14 +66,15 @@ function buildTodayMessage(items, stats) {
 
   function renderItem(item) {
     const taskText = escV2(item.text_raw) + (item.is_key_task ? ' ⭐' : '');
+    const label = item.text_raw.length > 25 ? item.text_raw.slice(0, 22) + '...' : item.text_raw;
     if (item.status === 'done') {
       taskList += `  ${num}\\. ~${taskText}~ ✅\n`;
+      keyboardRows.push([Markup.button.callback(`↩️ ${label}`, `today_undo_${item.id}`)]);
     } else if (item.status === 'skipped') {
       taskList += `  ${num}\\. ⏭ ${taskText}\n`;
+      keyboardRows.push([Markup.button.callback(`↩️ ${label}`, `today_undo_${item.id}`)]);
     } else {
-      // pending (or any other) — add button
       taskList += `  ${num}\\. ⬜ ${taskText}\n`;
-      const label = item.text_raw.length > 30 ? item.text_raw.slice(0, 27) + '...' : item.text_raw;
       keyboardRows.push([
         Markup.button.callback(`✅ ${label}`, `today_done_${item.id}`),
         Markup.button.callback('⏭', `today_skip_${item.id}`),
@@ -176,6 +177,12 @@ function registerTodayHandlers(bot) {
   bot.action(/^today_skip_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('⏭');
     await handleTodayStatus(ctx, ctx.match[1], 'skipped');
+  });
+
+  // Undo done/skip — restore to pending
+  bot.action(/^today_undo_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery('↩️');
+    await handleTodayStatus(ctx, ctx.match[1], 'pending');
   });
 
   // Postpone to tomorrow via inline button
