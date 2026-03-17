@@ -29,17 +29,22 @@ export function Dashboard() {
     <div className="pb-20">
       <Header period={period} onPeriodChange={handlePeriodChange} />
       <div className="px-4 py-3 space-y-3">
+        {focusLoading ? (
+          <Loader text="Загружаем статистику..." />
+        ) : (
+          <FocusStats data={focus} />
+        )}
+
+        <TasksList sprints={sprints} />
+
         {sprints.length === 0 ? (
           <SprintCard sprint={null} />
         ) : (
           sprints.map((s) => <SprintCard key={s.id} sprint={s} />)
         )}
 
-        {focusLoading ? (
-          <Loader text="Загружаем статистику..." />
-        ) : (
+        {!focusLoading && (
           <>
-            <FocusStats data={focus} />
             <TimeStats data={focus} />
             <DirectionsList directions={focus?.by_direction} />
             {sprints.filter((s) => s.type === 'monthly_goal').map((s) => (
@@ -47,8 +52,6 @@ export function Dashboard() {
             ))}
           </>
         )}
-
-        <TasksList sprints={sprints} />
       </div>
     </div>
   );

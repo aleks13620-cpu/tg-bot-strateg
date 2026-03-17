@@ -32,7 +32,8 @@ async function getDayStats(userId, date) {
   const skipped = items.filter((i) => i.status === 'skipped');
   const strategicDone = done.filter((i) => i.is_strategic).length;
   const fireDone = done.filter((i) => !i.is_strategic).length;
-  const sfi = done.length > 0 ? Math.round((strategicDone / done.length) * 100) : 0;
+  const totalStrategic = items.filter((i) => i.is_strategic).length;
+  const sfi = totalStrategic > 0 ? Math.round((strategicDone / totalStrategic) * 100) : 0;
 
   // Группировка выполненных по инициативам
   const byInitiative = {};
@@ -55,6 +56,7 @@ async function getDayStats(userId, date) {
     pending: total - done.length - skipped.length,
     strategicDone,
     fireDone,
+    totalStrategic,
     sfi,
     byInitiative,
     totalPlannedMinutes,
@@ -87,7 +89,8 @@ async function getSprintStats(userId, sprintStartDate, sprintEndDate, sprintId =
   const done = filtered.filter((i) => i.status === 'done');
   const strategicDone = done.filter((i) => i.is_strategic).length;
   const fireDone = done.filter((i) => !i.is_strategic).length;
-  const sfi = done.length > 0 ? Math.round((strategicDone / done.length) * 100) : 0;
+  const totalStrategic = filtered.filter((i) => i.is_strategic).length;
+  const sfi = totalStrategic > 0 ? Math.round((strategicDone / totalStrategic) * 100) : 0;
 
   // Группировка по дням
   const dayMap = {};
@@ -102,6 +105,7 @@ async function getSprintStats(userId, sprintStartDate, sprintEndDate, sprintId =
     done: done.length,
     strategicDone,
     fireDone,
+    totalStrategic,
     sfi,
     daysWorked,
   };
@@ -184,7 +188,8 @@ async function getWeekStats(userId, weekStart, weekEnd) {
   const done = items.filter((i) => i.status === 'done');
   const strategicDone = done.filter((i) => i.is_strategic).length;
   const fireDone = done.filter((i) => !i.is_strategic).length;
-  const sfi = done.length > 0 ? Math.round((strategicDone / done.length) * 100) : 0;
+  const totalStrategic = items.filter((i) => i.is_strategic).length;
+  const sfi = totalStrategic > 0 ? Math.round((strategicDone / totalStrategic) * 100) : 0;
 
   const byInitiative = {};
   done.forEach((item) => {
@@ -230,6 +235,7 @@ async function getWeekStats(userId, weekStart, weekEnd) {
     done: done.length,
     strategicDone,
     fireDone,
+    totalStrategic,
     sfi,
     daysWorked: Object.keys(dayMap).length,
     byInitiative,

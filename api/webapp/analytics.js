@@ -95,9 +95,7 @@ module.exports = async (req, res) => {
   // period-specific fields
   const total_tasks = stats.total || stats.totalTasks || 0;
   const completed_tasks = stats.done || 0;
-  const strategic_total = period === 'today'
-    ? (stats.total - stats.fireDone - (stats.pending || 0) - (stats.skipped || 0) + stats.strategicDone)
-    : stats.strategicDone; // approximation for week/sprint — done only
+  const strategic_total = stats.totalStrategic || 0;
 
   const off_strategy_done = stats.fireDone || 0;
   const strategic_done = stats.strategicDone || 0;
@@ -117,7 +115,9 @@ module.exports = async (req, res) => {
     completion_rate: total_tasks > 0 ? Math.round((completed_tasks / total_tasks) * 100) : 0,
     strategic: {
       completed: strategic_done,
-      completion_rate: stats.strategicDone > 0 ? 100 : 0, // best effort
+      completion_rate: strategic_total > 0
+        ? Math.round((strategic_done / strategic_total) * 100)
+        : 0,
     },
     off_strategy: {
       completed: off_strategy_done,

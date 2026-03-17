@@ -138,30 +138,16 @@ function buildTodayKeyboard(items) {
   const pendingItems = sortItems(items).filter((i) => i.status === 'pending');
   if (pendingItems.length === 0) return null;
 
-  const buttons = pendingItems.map((item) => {
-    const label = item.text_raw.length > 28 ? item.text_raw.slice(0, 25) + '...' : item.text_raw;
+  const rows = pendingItems.map((item) => {
+    const label = item.text_raw.length > 30 ? item.text_raw.slice(0, 27) + '...' : item.text_raw;
     return [
       Markup.button.callback(`✅ ${label}`, `today_done_${item.id}`),
       Markup.button.callback('⏭', `today_skip_${item.id}`),
+      Markup.button.callback('📅', `today_postpone_${item.id}`),
     ];
   });
 
-  return Markup.inlineKeyboard(buttons);
-}
-
-function buildTimePromptKeyboard(itemId) {
-  return Markup.inlineKeyboard([
-    [
-      Markup.button.callback('15 мин', `today_time_15_${itemId}`),
-      Markup.button.callback('30 мин', `today_time_30_${itemId}`),
-      Markup.button.callback('45 мин', `today_time_45_${itemId}`),
-    ],
-    [
-      Markup.button.callback('1 ч', `today_time_60_${itemId}`),
-      Markup.button.callback('1.5 ч', `today_time_90_${itemId}`),
-      Markup.button.callback('Пропустить', `today_time_skip_${itemId}`),
-    ],
-  ]);
+  return Markup.inlineKeyboard(rows);
 }
 
 function registerTodayHandlers(bot) {
@@ -201,21 +187,33 @@ function registerTodayHandlers(bot) {
     }
   });
 
-  // Mark done via inline button — update status, refresh dashboard, then show time prompt
+  // Mark done via inline button
   bot.action(/^today_done_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('✅');
+    await handleTodayStatus(ctx, ctx.match[1], 'done');
+  });
+
+  // Skip via inline button
+  bot.action(/^today_skip_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery('⏭');
+    await handleTodayStatus(ctx, ctx.match[1], 'skipped');
+  });
+
+  // Postpone to tomorrow via inline button
+  bot.action(/^today_postpone_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery('📅');
     const itemId = ctx.match[1];
     try {
       const { data: user } = await getUserByTelegramId(ctx.from.id);
       if (!user) return;
 
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowDate = tomorrow.toISOString().split('T')[0];
+
+      await updatePlanItem(itemId, { date: tomorrowDate });
+
       const date = getTodayDate();
-      const { data: itemsBefore } = await getPlanItemsByDate(user.id, date);
-      const item = itemsBefore.find((i) => i.id === itemId);
-
-      await updatePlanItem(itemId, { status: 'done' });
-
-      // Rebuild and edit the dashboard message
       const [{ data: items }, { data: sprint }, streak, stats] = await Promise.all([
         getPlanItemsByDate(user.id, date),
         getActiveSprint(user.id),
@@ -233,46 +231,10 @@ function registerTodayHandlers(bot) {
       try {
         await ctx.editMessageText(text, editOptions);
       } catch {
-        // ignore edit errors (e.g. message unchanged)
+        // ignore edit errors
       }
-
-      // Send time prompt
-      const taskName = item ? item.text_raw : 'задача';
-      const shortName = taskName.length > 40 ? taskName.slice(0, 37) + '...' : taskName;
-      await ctx.reply(`⏱ Сколько времени потратил на «${shortName}»?`, buildTimePromptKeyboard(itemId));
     } catch (error) {
-      console.error('[TODAY] done error:', error.message);
-    }
-  });
-
-  // Skip via inline button
-  bot.action(/^today_skip_(.+)$/, async (ctx) => {
-    await ctx.answerCbQuery('⏭');
-    await handleTodayStatus(ctx, ctx.match[1], 'skipped');
-  });
-
-  // Time tracking: save minutes
-  bot.action(/^today_time_(\d+)_(.+)$/, async (ctx) => {
-    await ctx.answerCbQuery('⏱');
-    try {
-      const minutes = parseInt(ctx.match[1], 10);
-      const itemId = ctx.match[2];
-      await updatePlanItem(itemId, { actual_minutes: minutes });
-      await ctx.editMessageText('⏱ Время сохранено!');
-      await showToday(ctx);
-    } catch (error) {
-      console.error('[TODAY] Time save error:', error.message);
-    }
-  });
-
-  // Time tracking: skip
-  bot.action(/^today_time_skip_(.+)$/, async (ctx) => {
-    await ctx.answerCbQuery();
-    try {
-      await ctx.editMessageText('⏱ Время не записано.');
-      await showToday(ctx);
-    } catch (error) {
-      console.error('[TODAY] Time skip error:', error.message);
+      console.error('[TODAY] postpone error:', error.message);
     }
   });
 
@@ -338,10 +300,22 @@ async function showToday(ctx) {
     const text = formatTodayList(items, stats) + buildSprintFooter(sprint, streak, sfi);
     const keyboard = buildTodayKeyboard(items);
 
+    console.log('[TODAY] MESSAGE PREVIEW:\n' + text.slice(0, 300));
+
     const options = { parse_mode: 'MarkdownV2' };
     if (keyboard) Object.assign(options, keyboard);
 
-    await ctx.reply(text, options);
+    // При нажатии кнопки — редактируем сообщение на месте (без скролла к низу)
+    // При команде /today — отправляем новое сообщение
+    if (ctx.callbackQuery) {
+      try {
+        await ctx.editMessageText(text, options);
+      } catch {
+        await ctx.reply(text, options);
+      }
+    } else {
+      await ctx.reply(text, options);
+    }
 
     if (items.length > 0) {
       const uncoveredMsg = await getUncoveredInitiativesMessage(user.id, date);
