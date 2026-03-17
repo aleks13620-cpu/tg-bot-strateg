@@ -134,8 +134,32 @@ function buildSprintFooter(sprint, streak, sfi) {
   return footer;
 }
 
+function getDisplayOrderedItems(items) {
+  const byInitiative = {};
+  const strategicItems = [];
+  const fireItems = [];
+
+  sortItems(items).forEach((item) => {
+    if (item.initiative) {
+      const title = item.initiative.title;
+      if (!byInitiative[title]) byInitiative[title] = [];
+      byInitiative[title].push(item);
+    } else if (item.is_strategic) {
+      strategicItems.push(item);
+    } else {
+      fireItems.push(item);
+    }
+  });
+
+  const result = [];
+  for (const groupItems of Object.values(byInitiative)) result.push(...groupItems);
+  result.push(...strategicItems);
+  result.push(...fireItems);
+  return result;
+}
+
 function buildTodayKeyboard(items) {
-  const pendingItems = sortItems(items).filter((i) => i.status === 'pending');
+  const pendingItems = getDisplayOrderedItems(items).filter((i) => i.status === 'pending');
   if (pendingItems.length === 0) return null;
 
   const rows = pendingItems.map((item) => {
