@@ -23,12 +23,15 @@ function sortItems(items) {
   });
 }
 
-function formatTodayList(items, stats) {
+// Returns { text, keyboard } — single pass guarantees text numbering matches button order
+function buildTodayMessage(items, stats) {
   if (items.length === 0) {
-    return '📋 На сегодня задач нет\\.\n\nИспользуйте кнопку *«📋 Добавить задачи»* чтобы запланировать день\\.';
+    return {
+      text: '📋 На сегодня задач нет\\.\n\nИспользуйте кнопку *«📋 Добавить задачи»* чтобы запланировать день\\.',
+      keyboard: null,
+    };
   }
 
-  // Completion line at top
   const done = items.filter((i) => i.status === 'done').length;
   const total = items.length;
   let completionLine = `✅ Выполнено: ${done}/${total}`;
@@ -39,7 +42,7 @@ function formatTodayList(items, stats) {
   if (done === total && total > 0) completionLine += ' 🎉';
   completionLine += '\n\n';
 
-  // Group items by initiative / strategic / fire
+  // Build display-ordered list once
   const byInitiative = {};
   const strategicItems = [];
   const fireItems = [];
@@ -59,53 +62,46 @@ function formatTodayList(items, stats) {
   const hasStrategic = Object.keys(byInitiative).length > 0 || strategicItems.length > 0;
   let taskList = '';
   let num = 1;
+  const keyboardRows = [];
+
+  function renderItem(item) {
+    const taskText = escV2(item.text_raw) + (item.is_key_task ? ' ⭐' : '');
+    if (item.status === 'done') {
+      taskList += `  ${num}\\. ~${taskText}~ ✅\n`;
+    } else if (item.status === 'skipped') {
+      taskList += `  ${num}\\. ⏭ ${taskText}\n`;
+    } else {
+      // pending (or any other) — add button
+      taskList += `  ${num}\\. ⬜ ${taskText}\n`;
+      const label = item.text_raw.length > 30 ? item.text_raw.slice(0, 27) + '...' : item.text_raw;
+      keyboardRows.push([
+        Markup.button.callback(`✅ ${label}`, `today_done_${item.id}`),
+        Markup.button.callback('⏭', `today_skip_${item.id}`),
+        Markup.button.callback('📅', `today_postpone_${item.id}`),
+      ]);
+    }
+    num++;
+  }
 
   for (const [title, groupItems] of Object.entries(byInitiative)) {
     taskList += `📌 *${escV2(title)}:*\n`;
-    for (const item of groupItems) {
-      const taskText = escV2(item.text_raw) + (item.is_key_task ? ' ⭐' : '');
-      if (item.status === 'done') {
-        taskList += `  ${num}\\. ~${taskText}~ ✅\n`;
-      } else if (item.status === 'skipped') {
-        taskList += `  ${num}\\. ⏭ ${taskText}\n`;
-      } else {
-        taskList += `  ${num}\\. ⬜ ${taskText}\n`;
-      }
-      num++;
-    }
+    groupItems.forEach(renderItem);
   }
 
   if (strategicItems.length > 0) {
     taskList += `📊 *По стратегии:*\n`;
-    for (const item of strategicItems) {
-      const taskText = escV2(item.text_raw) + (item.is_key_task ? ' ⭐' : '');
-      if (item.status === 'done') {
-        taskList += `  ${num}\\. ~${taskText}~ ✅\n`;
-      } else if (item.status === 'skipped') {
-        taskList += `  ${num}\\. ⏭ ${taskText}\n`;
-      } else {
-        taskList += `  ${num}\\. ⬜ ${taskText}\n`;
-      }
-      num++;
-    }
+    strategicItems.forEach(renderItem);
   }
 
   if (fireItems.length > 0) {
     if (hasStrategic) taskList += `\n🔥 *Вне стратегии:*\n`;
-    for (const item of fireItems) {
-      const taskText = escV2(item.text_raw) + (item.is_key_task ? ' ⭐' : '');
-      if (item.status === 'done') {
-        taskList += `  ${num}\\. ~${taskText}~ ✅\n`;
-      } else if (item.status === 'skipped') {
-        taskList += `  ${num}\\. ⏭ ${taskText}\n`;
-      } else {
-        taskList += `  ${num}\\. ⬜ ${taskText}\n`;
-      }
-      num++;
-    }
+    fireItems.forEach(renderItem);
   }
 
-  return completionLine + taskList;
+  return {
+    text: completionLine + taskList,
+    keyboard: keyboardRows.length > 0 ? Markup.inlineKeyboard(keyboardRows) : null,
+  };
 }
 
 function buildSprintFooter(sprint, streak, sfi) {
@@ -117,7 +113,6 @@ function buildSprintFooter(sprint, streak, sfi) {
     footer += `🎯 *${escV2(sprint.goal_text)}*\n`;
     footer += escV2(formatSprintProgressBar(sprint, sfi)) + '\n';
 
-    // Expired sprint notice
     const today = new Date().toISOString().split('T')[0];
     if (sprint.end_date < today) {
       const end = new Date(sprint.end_date + 'T00:00:00Z');
@@ -132,46 +127,6 @@ function buildSprintFooter(sprint, streak, sfi) {
   }
 
   return footer;
-}
-
-function getDisplayOrderedItems(items) {
-  const byInitiative = {};
-  const strategicItems = [];
-  const fireItems = [];
-
-  sortItems(items).forEach((item) => {
-    if (item.initiative) {
-      const title = item.initiative.title;
-      if (!byInitiative[title]) byInitiative[title] = [];
-      byInitiative[title].push(item);
-    } else if (item.is_strategic) {
-      strategicItems.push(item);
-    } else {
-      fireItems.push(item);
-    }
-  });
-
-  const result = [];
-  for (const groupItems of Object.values(byInitiative)) result.push(...groupItems);
-  result.push(...strategicItems);
-  result.push(...fireItems);
-  return result;
-}
-
-function buildTodayKeyboard(items) {
-  const pendingItems = getDisplayOrderedItems(items).filter((i) => i.status === 'pending');
-  if (pendingItems.length === 0) return null;
-
-  const rows = pendingItems.map((item) => {
-    const label = item.text_raw.length > 30 ? item.text_raw.slice(0, 27) + '...' : item.text_raw;
-    return [
-      Markup.button.callback(`✅ ${label}`, `today_done_${item.id}`),
-      Markup.button.callback('⏭', `today_skip_${item.id}`),
-      Markup.button.callback('📅', `today_postpone_${item.id}`),
-    ];
-  });
-
-  return Markup.inlineKeyboard(rows);
 }
 
 function registerTodayHandlers(bot) {
@@ -246,8 +201,8 @@ function registerTodayHandlers(bot) {
       ]);
 
       const sfi = stats && stats.done > 0 ? stats.sfi : null;
-      const text = formatTodayList(items, stats) + buildSprintFooter(sprint, streak, sfi);
-      const keyboard = buildTodayKeyboard(items);
+      const { text: msgText, keyboard } = buildTodayMessage(items, stats);
+      const text = msgText + buildSprintFooter(sprint, streak, sfi);
 
       const editOptions = { parse_mode: 'MarkdownV2' };
       if (keyboard) Object.assign(editOptions, keyboard);
@@ -321,8 +276,8 @@ async function showToday(ctx) {
     ]);
 
     const sfi = stats && stats.done > 0 ? stats.sfi : null;
-    const text = formatTodayList(items, stats) + buildSprintFooter(sprint, streak, sfi);
-    const keyboard = buildTodayKeyboard(items);
+    const { text: msgText, keyboard } = buildTodayMessage(items, stats);
+    const text = msgText + buildSprintFooter(sprint, streak, sfi);
 
     console.log('[TODAY] MESSAGE PREVIEW:\n' + text.slice(0, 300));
 
@@ -375,8 +330,8 @@ async function handleTodayStatus(ctx, itemId, status) {
     ]);
 
     const sfi = stats && stats.done > 0 ? stats.sfi : null;
-    const text = formatTodayList(items, stats) + buildSprintFooter(sprint, streak, sfi);
-    const keyboard = buildTodayKeyboard(items);
+    const { text: msgText, keyboard } = buildTodayMessage(items, stats);
+    const text = msgText + buildSprintFooter(sprint, streak, sfi);
 
     const editOptions = { parse_mode: 'MarkdownV2' };
     if (keyboard) Object.assign(editOptions, keyboard);
