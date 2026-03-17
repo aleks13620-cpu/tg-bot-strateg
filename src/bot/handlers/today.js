@@ -216,8 +216,11 @@ function registerTodayHandlers(bot) {
 
       try {
         await ctx.editMessageText(text, editOptions);
+        ctx.session.todayMessageId = ctx.callbackQuery.message.message_id;
       } catch {
-        // ignore edit errors
+        try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch {}
+        const sent = await ctx.reply(text, editOptions);
+        ctx.session.todayMessageId = sent.message_id;
       }
     } catch (error) {
       console.error('[TODAY] postpone error:', error.message);
@@ -292,15 +295,26 @@ async function showToday(ctx) {
     if (keyboard) Object.assign(options, keyboard);
 
     // При нажатии кнопки — редактируем сообщение на месте (без скролла к низу)
-    // При команде /today — отправляем новое сообщение
+    // При команде /today — отправляем новое сообщение и сохраняем message_id
     if (ctx.callbackQuery) {
       try {
         await ctx.editMessageText(text, options);
       } catch {
-        await ctx.reply(text, options);
+        // Очищаем клавиатуру старого сообщения перед отправкой нового
+        try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch {}
+        const sent = await ctx.reply(text, options);
+        ctx.session.todayMessageId = sent.message_id;
       }
     } else {
-      await ctx.reply(text, options);
+      // Удаляем старое сообщение /today чтобы не накапливались устаревшие клавиатуры
+      if (ctx.session.todayMessageId) {
+        try {
+          await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.todayMessageId);
+        } catch {}
+        ctx.session.todayMessageId = null;
+      }
+      const sent = await ctx.reply(text, options);
+      ctx.session.todayMessageId = sent.message_id;
     }
 
     if (items.length > 0) {
@@ -345,8 +359,13 @@ async function handleTodayStatus(ctx, itemId, status) {
 
     try {
       await ctx.editMessageText(text, editOptions);
+      // Сохраняем message_id актуального сообщения
+      ctx.session.todayMessageId = ctx.callbackQuery.message.message_id;
     } catch {
-      await ctx.reply(text, editOptions);
+      // Очищаем клавиатуру устаревшего сообщения чтобы старые кнопки не мешали
+      try { await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); } catch {}
+      const sent = await ctx.reply(text, editOptions);
+      ctx.session.todayMessageId = sent.message_id;
     }
   } catch (error) {
     console.error('[TODAY] Status update error:', error.message);
