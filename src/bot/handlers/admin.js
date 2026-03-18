@@ -1,5 +1,5 @@
 const { Markup } = require('telegraf');
-const { supabase } = require('../../config/database');
+const { supabase } = require('../../../config/database');
 
 async function getStats() {
   const now = new Date().toISOString();
