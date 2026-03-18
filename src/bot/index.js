@@ -18,8 +18,16 @@ const { quarterlyReviewScene } = require('./scenes/quarterlyReview');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
+function alertAdmin(message) {
+  const adminId = process.env.ADMIN_TELEGRAM_ID;
+  if (!adminId) return;
+  bot.telegram.sendMessage(adminId, `🚨 ${message}`).catch(() => {});
+}
+
 process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
   console.error('[BOT] Unhandled rejection:', reason);
+  alertAdmin(`[BOT] Unhandled rejection: ${msg}`);
 });
 
 // Глобальный обработчик ошибок
@@ -30,6 +38,7 @@ bot.catch((err, ctx) => {
     return;
   }
   console.error(`[BOT] Error for ${ctx.updateType}:`, err.message);
+  alertAdmin(`[BOT] Error (${ctx.updateType}): ${err.message}`);
   ctx.reply('Произошла ошибка. Попробуйте позже.').catch(() => {});
 });
 

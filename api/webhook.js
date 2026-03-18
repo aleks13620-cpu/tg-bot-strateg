@@ -7,6 +7,16 @@ module.exports = async (req, res) => {
     return res.status(200).json({ status: 'Strategist Bot is running' });
   }
 
+  // Проверка секретного токена от Telegram (защита от поддельных запросов)
+  const webhookSecret = process.env.WEBHOOK_SECRET_TOKEN;
+  if (webhookSecret) {
+    const incoming = req.headers['x-telegram-bot-api-secret-token'];
+    if (incoming !== webhookSecret) {
+      console.warn('[WEBHOOK] Invalid or missing secret token — request rejected');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  }
+
   const start = Date.now();
   try {
     await bot.handleUpdate(req.body);
