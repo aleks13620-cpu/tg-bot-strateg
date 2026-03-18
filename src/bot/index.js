@@ -13,6 +13,7 @@ const { registerFinanceHandlers } = require('./handlers/finance');
 const { registerMetricsHandlers } = require('./handlers/metrics');
 const { registerReviewHandlers } = require('./handlers/review');
 const { registerSettingsHandlers } = require('./handlers/settings');
+const { registerAdminHandlers } = require('./handlers/admin');
 const { onboardingScene } = require('./scenes/onboarding');
 const { quarterlyReviewScene } = require('./scenes/quarterlyReview');
 
@@ -58,6 +59,7 @@ registerFinanceHandlers(bot);
 registerMetricsHandlers(bot);
 registerSettingsHandlers(bot);
 registerReviewHandlers(bot);
+registerAdminHandlers(bot);
 registerPlanHandlers(bot);
 registerDayCloseHandlers(bot);
 registerProgressHandlers(bot);
