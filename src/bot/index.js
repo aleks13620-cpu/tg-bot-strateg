@@ -18,6 +18,10 @@ const { quarterlyReviewScene } = require('./scenes/quarterlyReview');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
+process.on('unhandledRejection', (reason) => {
+  console.error('[BOT] Unhandled rejection:', reason);
+});
+
 // Глобальный обработчик ошибок
 bot.catch((err, ctx) => {
   // Telegram callback query expired — безвредно, не показываем пользователю ошибку

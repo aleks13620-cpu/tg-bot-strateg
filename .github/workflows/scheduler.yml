@@ -18,5 +18,19 @@ jobs:
       - name: Send reminder
         run: |
           TYPE="${{ github.event.inputs.type || 'check' }}"
-          curl -sf \
-            "https://tg-bot-strateg-1ukh.vercel.app/api/remind?type=${TYPE}&secret=${{ secrets.WEBHOOK_SECRET }}"
+          RESPONSE=$(curl -sf \
+            "https://tg-bot-strateg-1ukh.vercel.app/api/remind?type=${TYPE}&secret=${{ secrets.WEBHOOK_SECRET }}")
+          echo "Response: $RESPONSE"
+          echo "$RESPONSE" | grep -q '"ok":true' || (echo "ERROR: remind endpoint returned non-ok response" && exit 1)
+
+      - name: Check webhook status
+        continue-on-error: true
+        run: |
+          INFO=$(curl -sf "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/getWebhookInfo")
+          echo "Webhook info: $INFO"
+          PENDING=$(echo "$INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('result',{}).get('pending_update_count',0))")
+          LAST_ERR=$(echo "$INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('result',{}).get('last_error_message','none'))")
+          echo "Pending updates: $PENDING | Last error: $LAST_ERR"
+          if [ "$PENDING" -gt 50 ]; then
+            echo "WARNING: pending_update_count=$PENDING — possible webhook delivery issue"
+          fi

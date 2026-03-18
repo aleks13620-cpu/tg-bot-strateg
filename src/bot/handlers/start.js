@@ -2,13 +2,24 @@ const { findOrCreateUser } = require('../../database/queries/users');
 const { mainMenuKeyboard, persistentKeyboard } = require('../../utils/keyboards');
 const { getActiveSprint, formatSprint } = require('../../services/sprint');
 
+const DB_TIMEOUT_MS = 8000;
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`DB timeout after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 function registerStartHandlers(bot) {
   bot.command('start', async (ctx) => {
     try {
       const telegramId = ctx.from.id;
       console.log(`[START] User ${telegramId} initiated /start`);
 
-      const { data: user, error } = await findOrCreateUser(telegramId);
+      const { data: user, error } = await withTimeout(findOrCreateUser(telegramId), DB_TIMEOUT_MS);
 
       if (error) {
         await ctx.reply('Не удалось создать профиль. Попробуйте /start ещё раз.');
@@ -47,7 +58,7 @@ function registerStartHandlers(bot) {
       }
       console.log(`[START] User ${telegramId} - ${isNewUser ? 'new' : 'returning'}`);
     } catch (error) {
-      console.error('[START] Unhandled error:', error.message);
+      console.error(`[START] DB error for ${ctx.from.id}:`, error.message, error.code);
       await ctx.reply('Произошла ошибка. Попробуйте позже.');
     }
   });

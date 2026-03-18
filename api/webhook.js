@@ -7,8 +7,10 @@ module.exports = async (req, res) => {
     return res.status(200).json({ status: 'Strategist Bot is running' });
   }
 
+  const start = Date.now();
   try {
     await bot.handleUpdate(req.body);
+    console.log(`[WEBHOOK] Update ${req.body?.update_id} processed in ${Date.now() - start}ms`);
   } catch (error) {
     console.error('[WEBHOOK] Error processing update:', error.message);
   }
