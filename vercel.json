@@ -1,4 +1,7 @@
 {
+  "functions": {
+    "api/remind.js": { "maxDuration": 60 }
+  },
   "rewrites": [
     { "source": "/api/webapp/sprints/active", "destination": "/api/webapp/sprints" },
     { "source": "/api/webapp/analytics/focus", "destination": "/api/webapp/analytics" },

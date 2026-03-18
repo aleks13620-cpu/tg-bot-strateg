@@ -60,31 +60,39 @@ module.exports = async (req, res) => {
     const type = req.query.type || 'check';
     let sent = 0, skipped = 0, failed = 0;
 
+    // Параллельная отправка батчами по CONCURRENCY пользователей
+    const CONCURRENCY = 10;
+
+    async function sendBatch(entries) {
+      const results = await Promise.allSettled(
+        entries.map(({ user, type: userType }) =>
+          sendForUser(user, userType).then((ok) => ({ ok }))
+        )
+      );
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          result.value.ok ? sent++ : skipped++;
+        } else {
+          failed++;
+        }
+      }
+    }
+
     // Per-user режим: определяем кому и что отправить по их TZ и настройкам
     if (type === 'check') {
       const pairs = await getUsersToRemindNow(new Date());
       console.log(`[REMIND] check mode: ${pairs.length} reminders to send`);
 
-      for (const { user, type: userType } of pairs) {
-        try {
-          const ok = await sendForUser(user, userType);
-          ok ? sent++ : skipped++;
-        } catch (err) {
-          console.error(`[REMIND] Failed for user ${user.telegram_id}:`, err.message);
-          failed++;
-        }
+      for (let i = 0; i < pairs.length; i += CONCURRENCY) {
+        await sendBatch(pairs.slice(i, i + CONCURRENCY));
       }
     } else {
       // Обратная совместимость: явный type для ручного запуска
       const users = await getAllActiveUsers();
-      for (const user of users) {
-        try {
-          const ok = await sendForUser(user, type);
-          ok ? sent++ : skipped++;
-        } catch (err) {
-          console.error(`[REMIND] Failed for user ${user.telegram_id}:`, err.message);
-          failed++;
-        }
+      const pairs = users.map((user) => ({ user, type }));
+
+      for (let i = 0; i < pairs.length; i += CONCURRENCY) {
+        await sendBatch(pairs.slice(i, i + CONCURRENCY));
       }
     }
 
