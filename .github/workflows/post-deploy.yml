@@ -15,9 +15,11 @@ jobs:
           curl -sf "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/setWebhook?url=https://example.com/tmp" > /dev/null
           sleep 2
 
-          # Ставим настоящий URL с secret_token (подставляется GitHub до запуска shell)
-          RESULT=$(curl -sf \
-            "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/setWebhook?url=https://tg-bot-strateg-1ukh.vercel.app/api/webhook&secret_token=${{ secrets.WEBHOOK_SECRET_TOKEN }}")
+          # Ставим настоящий URL с secret_token через POST (избегаем проблем с URL-парсингом)
+          RESULT=$(curl -sf -X POST \
+            -d "url=https://tg-bot-strateg-1ukh.vercel.app/api/webhook" \
+            -d "secret_token=${{ secrets.WEBHOOK_SECRET_TOKEN }}" \
+            "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/setWebhook")
           echo "setWebhook response: $RESULT"
           echo "$RESULT" | grep -q '"ok":true' || (echo "ERROR: failed to set webhook" && exit 1)
 
