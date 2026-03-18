@@ -42,14 +42,16 @@ module.exports = async (req, res) => {
   } else {
     const url = info.result?.url;
     const pending = info.result?.pending_update_count || 0;
+    const lastErrDate = info.result?.last_error_date || 0;
     const lastErr = info.result?.last_error_message;
+    const errIsRecent = lastErrDate > 0 && (Date.now() / 1000 - lastErrDate) < 600; // 10 минут
     if (url !== WEBHOOK_URL) {
       webhookStatus = 'missing';
       webhookError = `url="${url}"`;
     } else if (pending > 50) {
       webhookStatus = 'backlog';
       webhookError = `pending=${pending}`;
-    } else if (lastErr) {
+    } else if (lastErr && errIsRecent) {
       webhookStatus = 'degraded';
       webhookError = lastErr;
     }
