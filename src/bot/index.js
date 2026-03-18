@@ -20,6 +20,11 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 
 // Глобальный обработчик ошибок
 bot.catch((err, ctx) => {
+  // Telegram callback query expired — безвредно, не показываем пользователю ошибку
+  if (err.message && (err.message.includes('query is too old') || err.message.includes('query ID is invalid'))) {
+    console.warn(`[BOT] Callback query expired (ignored): ${err.message}`);
+    return;
+  }
   console.error(`[BOT] Error for ${ctx.updateType}:`, err.message);
   ctx.reply('Произошла ошибка. Попробуйте позже.').catch(() => {});
 });
