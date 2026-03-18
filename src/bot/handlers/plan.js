@@ -5,6 +5,16 @@ const { getPlanItemById } = require('../../database/queries/planItems');
 const { addDayPlanForDate, getTodayPlan, getPlanForDate, formatPlanMessages, getTodayDate, parseDateInput, formatDateRu } = require('../../services/planning');
 const { escapeMarkdown, persistentKeyboard, KEYBOARD_BUTTONS, buildDatePickerKeyboard } = require('../../utils/keyboards');
 
+const DB_TIMEOUT_MS = 8000;
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`DB timeout after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 function registerPlanHandlers(bot) {
   // Reply keyboard: кнопка "Добавить задачи" — показываем дейтпикер
   bot.hears('📋 Добавить задачи', async (ctx) => {
@@ -299,14 +309,14 @@ function registerPlanHandlers(bot) {
 
     // Фолбэк: если сессия потеряна (serverless cold start) — восстанавливаем дату из БД
     if (!ctx.session?.awaitingPlanInput) {
-      const { data: userCheck } = await getUserByTelegramId(ctx.from.id);
+      const { data: userCheck } = await withTimeout(getUserByTelegramId(ctx.from.id), DB_TIMEOUT_MS);
       if (!userCheck?.meta?.pendingPlanDate) return next();
       ctx.session.awaitingPlanInput = true;
       ctx.session.selectedDate = userCheck.meta.pendingPlanDate;
     }
 
     try {
-      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      const { data: user } = await withTimeout(getUserByTelegramId(ctx.from.id), DB_TIMEOUT_MS);
       if (!user) {
         await ctx.reply('Профиль не найден. Используйте /start.');
         return;
@@ -318,7 +328,7 @@ function registerPlanHandlers(bot) {
       ctx.session.selectedDate = null;
       clearPendingPlanDate(user.id); // сбрасываем персистентное состояние
 
-      const { data: items, error } = await addDayPlanForDate(user.id, ctx.message.text, date);
+      const { data: items, error } = await withTimeout(addDayPlanForDate(user.id, ctx.message.text, date), DB_TIMEOUT_MS);
 
       if (error) {
         await ctx.reply('Ошибка: ' + error.message);
@@ -327,7 +337,7 @@ function registerPlanHandlers(bot) {
 
       console.log(`[PLAN] User ${user.id} added ${items.length} tasks for ${date}`);
 
-      const { data: sprints } = await getActiveSprints(user.id);
+      const { data: sprints } = await withTimeout(getActiveSprints(user.id), DB_TIMEOUT_MS);
       ctx.session.qualificationItems = items;
       ctx.session.qualificationIndex = 0;
       ctx.session.qualificationSprints = sprints;
@@ -880,8 +890,8 @@ async function finishQualification(ctx) {
   ctx.session.qualificationKeyTaskSet = null;
   ctx.session.qualificationMessageId = null;
 
-  const { data: user } = await getUserByTelegramId(ctx.from.id);
-  const { data: updatedItems } = await getPlanForDate(user.id, date);
+  const { data: user } = await withTimeout(getUserByTelegramId(ctx.from.id), DB_TIMEOUT_MS);
+  const { data: updatedItems } = await withTimeout(getPlanForDate(user.id, date), DB_TIMEOUT_MS);
   await ctx.reply('✅ Квалификация завершена!');
   await sendPlanMessages(ctx, updatedItems, { buttons: persistentKeyboard, date });
 
