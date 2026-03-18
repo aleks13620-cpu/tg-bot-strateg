@@ -3,6 +3,7 @@ name: Post-deploy webhook setup
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   set-webhook:
