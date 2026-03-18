@@ -14,6 +14,10 @@ jobs:
           WEBHOOK_SECRET="${{ secrets.WEBHOOK_SECRET_TOKEN }}"
           SECRET_PARAM=""
           [ -n "$WEBHOOK_SECRET" ] && SECRET_PARAM="&secret_token=${WEBHOOK_SECRET}"
+
+          # Удаляем webhook чтобы Telegram принял новые параметры (включая secret_token)
+          curl -sf "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/deleteWebhook" > /dev/null
+
           RESULT=$(curl -sf \
             "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/setWebhook?url=https://tg-bot-strateg-1ukh.vercel.app/api/webhook${SECRET_PARAM}")
           echo "setWebhook response: $RESULT"
