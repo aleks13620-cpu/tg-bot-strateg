@@ -1,0 +1,23 @@
+name: Post-deploy webhook setup
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  set-webhook:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set Telegram webhook
+        run: |
+          RESULT=$(curl -sf \
+            "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/setWebhook?url=https://tg-bot-strateg-1ukh.vercel.app/api/webhook")
+          echo "setWebhook response: $RESULT"
+          echo "$RESULT" | grep -q '"ok":true' || (echo "ERROR: failed to set webhook" && exit 1)
+
+      - name: Verify webhook
+        run: |
+          INFO=$(curl -sf "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/getWebhookInfo")
+          echo "Webhook info: $INFO"
+          echo "$INFO" | grep -q '"url":"https://tg-bot-strateg-1ukh.vercel.app/api/webhook"' \
+            || (echo "ERROR: webhook URL mismatch" && exit 1)
