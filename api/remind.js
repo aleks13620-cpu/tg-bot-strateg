@@ -9,9 +9,10 @@ const {
   getWeeklyMessage,
   getStaleMessage,
   getReminderType,
+  markReminderSent,
 } = require('../src/services/reminder');
 
-async function sendForUser(user, type) {
+async function sendForUser(user, type, localDate) {
   let message = null;
 
   if (type === 'morning') {
@@ -26,7 +27,10 @@ async function sendForUser(user, type) {
     message = await getEveningMessage(user.id);
   }
 
-  if (!message) return false;
+  if (!message) {
+    console.log(`[REMIND] No message for ${user.telegram_id} (type=${type})`);
+    return false;
+  }
 
   await bot.telegram.sendMessage(user.telegram_id, message.text, {
     parse_mode: 'Markdown',
@@ -42,6 +46,13 @@ async function sendForUser(user, type) {
         ...staleMsg.keyboard,
       });
     }
+  }
+
+  // Idempotency: фиксируем отправку в meta чтобы не дублировать
+  if (localDate && (type === 'morning' || type === 'evening')) {
+    markReminderSent(user.id, type, localDate).catch((e) =>
+      console.error(`[REMIND] Failed to mark ${type} sent for ${user.telegram_id}:`, e.message)
+    );
   }
 
   return true;
@@ -65,8 +76,8 @@ module.exports = async (req, res) => {
 
     async function sendBatch(entries) {
       const results = await Promise.allSettled(
-        entries.map(({ user, type: userType }) =>
-          sendForUser(user, userType).then((ok) => ({ ok }))
+        entries.map(({ user, type: userType, localDate }) =>
+          sendForUser(user, userType, localDate).then((ok) => ({ ok }))
         )
       );
       for (const result of results) {
@@ -81,7 +92,8 @@ module.exports = async (req, res) => {
     // Per-user режим: определяем кому и что отправить по их TZ и настройкам
     if (type === 'check') {
       const pairs = await getUsersToRemindNow(new Date());
-      console.log(`[REMIND] check mode: ${pairs.length} reminders to send`);
+      const pairsSummary = pairs.map((p) => `${p.user.telegram_id}(${p.type})`).join(', ');
+      console.log(`[REMIND] check mode: ${pairs.length} reminders to send${pairsSummary ? ': ' + pairsSummary : ''}`);
 
       for (let i = 0; i < pairs.length; i += CONCURRENCY) {
         await sendBatch(pairs.slice(i, i + CONCURRENCY));

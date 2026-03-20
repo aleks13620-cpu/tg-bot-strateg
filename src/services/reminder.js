@@ -56,17 +56,34 @@ async function getUsersToRemindNow(nowUtc) {
     const [eH, eM] = eveningStr.split(':').map(Number);
     const morningTotal = mH * 60 + mM;
     const eveningTotal = eH * 60 + eM;
-    const WINDOW = 15; // ±15 минут
+    const WINDOW = 20; // ±20 минут (покрывает задержки GitHub Actions до 20 мин)
+
+    // Локальная дата пользователя для idempotency-чека
+    let localDateStr;
+    try {
+      localDateStr = nowUtc.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+    } catch {
+      localDateStr = nowUtc.toISOString().split('T')[0];
+    }
+    const meta = user.meta || {};
 
     // Morning
     if (Math.abs(totalNow - morningTotal) <= WINDOW) {
-      result.push({ user, type: 'morning' });
+      if (meta.last_morning_sent === localDateStr) {
+        console.log(`[REMIND] Skip morning for ${user.telegram_id}: already sent today`);
+        continue;
+      }
+      result.push({ user, type: 'morning', localDate: localDateStr });
       continue;
     }
 
     // Evening
     if (Math.abs(totalNow - eveningTotal) <= WINDOW) {
-      result.push({ user, type: 'evening' });
+      if (meta.last_evening_sent === localDateStr) {
+        console.log(`[REMIND] Skip evening for ${user.telegram_id}: already sent today`);
+        continue;
+      }
+      result.push({ user, type: 'evening', localDate: localDateStr });
       continue;
     }
 
@@ -74,14 +91,14 @@ async function getUsersToRemindNow(nowUtc) {
     const midTotal = morningTotal + 240;
     const isWeekday = localDow && !['Sat','Sun'].includes(localDow.slice(0, 3));
     if (isWeekday && Math.abs(totalNow - midTotal) <= WINDOW) {
-      result.push({ user, type: 'midday' });
+      result.push({ user, type: 'midday', localDate: localDateStr });
       continue;
     }
 
     // Weekly: суббота
     if (localDow && localDow.startsWith('Sat') && Math.abs(totalNow - morningTotal) <= WINDOW + 60) {
       // Используем morning window для weekly (отправляем утром в субботу)
-      result.push({ user, type: 'weekly' });
+      result.push({ user, type: 'weekly', localDate: localDateStr });
       continue;
     }
 
@@ -91,7 +108,7 @@ async function getUsersToRemindNow(nowUtc) {
       if (user.last_active_at) {
         const daysSince = (nowUtc.getTime() - new Date(user.last_active_at).getTime()) / (1000 * 60 * 60 * 24);
         if (daysSince > 3) {
-          result.push({ user, type: 'reactivation' });
+          result.push({ user, type: 'reactivation', localDate: localDateStr });
         }
       }
     }
@@ -242,7 +259,14 @@ async function getEveningMessage(userId) {
   const status = await getUserDayStatus(userId);
 
   if (!status.hasPlan) return null;
-  if (status.allClosed) return null;
+
+  // Все задачи закрыты — напоминаем закрыть день и зафиксировать стрик
+  if (status.allClosed) {
+    return {
+      text: '🌙 *Добрый вечер!*\n\nВсе задачи выполнены 🎉 Не забудь закрыть день и зафиксировать стрик!',
+      keyboard: Markup.inlineKeyboard([[Markup.button.callback('📊 Закрыть день', 'action_close_day')]]),
+    };
+  }
 
   const upcoming = await getUpcomingTasks(userId);
 
@@ -441,6 +465,13 @@ async function getStaleMessage(userId) {
   return { text, keyboard: Markup.inlineKeyboard(buttons) };
 }
 
+async function markReminderSent(userId, type, date) {
+  const key = type === 'morning' ? 'last_morning_sent' : 'last_evening_sent';
+  const { data: row } = await supabase.from('users').select('meta').eq('id', userId).single();
+  const meta = row?.meta || {};
+  await supabase.from('users').update({ meta: { ...meta, [key]: date } }).eq('id', userId);
+}
+
 module.exports = {
   getAllActiveUsers,
   getUsersToRemindNow,
@@ -452,4 +483,5 @@ module.exports = {
   getStaleMessage,
   getReminderType,
   getUnfinishedWeekItems,
+  markReminderSent,
 };
