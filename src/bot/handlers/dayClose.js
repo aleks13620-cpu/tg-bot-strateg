@@ -157,7 +157,11 @@ function registerDayCloseHandlers(bot) {
       const tomorrow = getTomorrowDate();
 
       // Создаём копии на завтра
-      await createPlanItemsWithDetails(user.id, tomorrow, carryItems);
+      const { data: created, error: createError } = await createPlanItemsWithDetails(user.id, tomorrow, carryItems);
+      if (createError || !created || created.length === 0) {
+        await ctx.reply('Ошибка при переносе задач. Задачи остались на сегодня — попробуйте ещё раз.');
+        return;
+      }
 
       // Обновляем оригиналы: status → moved
       for (const item of carryItems) {
