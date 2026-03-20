@@ -288,7 +288,11 @@ function registerDayCloseHandlers(bot) {
     await ctx.answerCbQuery();
     try {
       const itemId = ctx.match[1];
-      await updatePlanItem(itemId, { status: 'moved' });
+      const { error: cancelError } = await updatePlanItem(itemId, { status: 'moved' });
+      if (cancelError) {
+        await ctx.reply('Ошибка при отмене задачи.');
+        return;
+      }
       await ctx.editMessageText(`❌ Отменено: ${ctx.callbackQuery.message.text}`);
     } catch (error) {
       console.error('[WEEKLY_REVIEW] Cancel error:', error.message);

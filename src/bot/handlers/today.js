@@ -157,7 +157,11 @@ function registerTodayHandlers(bot) {
         return;
       }
 
-      await updatePlanItem(pending.id, { status: 'done' });
+      const { error: doneError } = await updatePlanItem(pending.id, { status: 'done' });
+      if (doneError) {
+        await ctx.reply('Ошибка при обновлении задачи.');
+        return;
+      }
       console.log(`[TODAY] /done: task ${pending.id} marked done for user ${user.id}`);
 
       await showToday(ctx);
@@ -378,11 +382,14 @@ async function handleStaleAction(ctx, itemId, action) {
     if (!user) return;
 
     if (action === 'done') {
-      await updatePlanItem(itemId, { status: 'done' });
+      const { error } = await updatePlanItem(itemId, { status: 'done' });
+      if (error) { await ctx.reply('Ошибка при обновлении задачи.'); return; }
     } else if (action === 'skipped') {
-      await updatePlanItem(itemId, { status: 'skipped' });
+      const { error } = await updatePlanItem(itemId, { status: 'skipped' });
+      if (error) { await ctx.reply('Ошибка при обновлении задачи.'); return; }
     } else if (action === 'today') {
-      await updatePlanItem(itemId, { date: getTodayDate() });
+      const { error } = await updatePlanItem(itemId, { date: getTodayDate() });
+      if (error) { await ctx.reply('Ошибка при обновлении задачи.'); return; }
     }
 
     const staleMsg = await getStaleMessage(user.id);

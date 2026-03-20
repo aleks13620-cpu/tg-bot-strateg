@@ -146,11 +146,15 @@ function registerPlanHandlers(bot) {
         const { getPlanItemById, updatePlanItem, createPlanItemsWithDetails } = require('../../database/queries/planItems');
         const { data: item } = await getPlanItemById(itemId);
         if (item) {
-          await createPlanItemsWithDetails(user.id, dateParam, [{
+          const { data: rescheduled, error: rescheduleError } = await createPlanItemsWithDetails(user.id, dateParam, [{
             text_raw: item.text_raw,
             initiative_id: item.initiative_id,
             is_strategic: item.is_strategic,
           }]);
+          if (rescheduleError || !rescheduled || rescheduled.length === 0) {
+            await ctx.reply('Ошибка при переносе задачи. Попробуйте ещё раз.');
+            return;
+          }
           await updatePlanItem(itemId, { status: 'moved' });
           await ctx.reply(`📅 Перенесено на ${dateLabel}: _${item.text_raw}_`, { parse_mode: 'Markdown' });
         }
