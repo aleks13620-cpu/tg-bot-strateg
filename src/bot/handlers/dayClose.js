@@ -111,16 +111,9 @@ function registerDayCloseHandlers(bot) {
         const tomorrow = getTomorrowDate();
         msg += `\nПеренести на ${formatDateRu(tomorrow)}?`;
 
-        // Сохраняем в сессию
-        ctx.session.carryOverItems = skippedItems.map((item) => ({
-          id: item.id,
-          text_raw: item.text_raw,
-          initiative_id: item.initiative_id,
-          is_strategic: item.is_strategic,
-        }));
-
+        // Дата вшита в callback — не зависим от сессии (cold start / потеря сессии не ломает перенос)
         await ctx.reply(msg, Markup.inlineKeyboard([
-          [Markup.button.callback('✅ Перенести все', 'dayclose_carry_all')],
+          [Markup.button.callback('✅ Перенести все', `dayclose_carry_all_${tomorrow}`)],
           [Markup.button.callback('⏭ Не переносить', 'dayclose_carry_skip')],
         ]));
       } else {
@@ -132,54 +125,57 @@ function registerDayCloseHandlers(bot) {
     }
   });
 
-  // Перенести все задачи на завтра
-  bot.action('dayclose_carry_all', async (ctx) => {
+  // Перенести все задачи — дата назначения передаётся в callback, без зависимости от сессии
+  bot.action(/^dayclose_carry_all_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
     await ctx.answerCbQuery('Переношу...');
     try {
       const { data: user } = await getUserByTelegramId(ctx.from.id);
       if (!user) return;
 
-      const date = getTodayDate();
-      const { data: allItems } = await getPlanItemsByDate(user.id, date);
-      const skipped = allItems.filter((i) => i.status === 'skipped');
-      const carryItems = skipped.map((item) => ({
-        id: item.id,
-        text_raw: item.text_raw,
-        initiative_id: item.initiative_id,
-        is_strategic: item.is_strategic,
-      }));
+      const tomorrow = ctx.match[1]; // дата из callback — фиксирована в момент создания кнопки
+
+      // Исходная дата = день перед tomorrow; по ней ищем skipped задачи
+      const sourceDate = new Date(tomorrow + 'T00:00:00Z');
+      sourceDate.setUTCDate(sourceDate.getUTCDate() - 1);
+      const sourceDateStr = sourceDate.toISOString().split('T')[0];
+
+      const { data: allItems } = await getPlanItemsByDate(user.id, sourceDateStr);
+      const carryItems = (allItems || [])
+        .filter((i) => i.status === 'skipped')
+        .map((item) => ({
+          id: item.id,
+          text_raw: item.text_raw,
+          initiative_id: item.initiative_id,
+          is_strategic: item.is_strategic,
+        }));
 
       if (carryItems.length === 0) {
         await ctx.editMessageText('Нет задач для переноса.');
         return;
       }
 
-      const tomorrow = getTomorrowDate();
-
-      // Создаём копии на завтра
+      // Создаём копии на целевую дату
       const { data: created, error: createError } = await createPlanItemsWithDetails(user.id, tomorrow, carryItems);
       if (createError || !created || created.length === 0) {
-        await ctx.reply('Ошибка при переносе задач. Задачи остались на сегодня — попробуйте ещё раз.');
+        await ctx.reply('Ошибка при переносе задач. Попробуйте ещё раз.');
         return;
       }
 
-      // Обновляем оригиналы: status → moved
+      // Помечаем оригиналы как перенесённые
       for (const item of carryItems) {
         await updatePlanItem(item.id, { status: 'moved' });
       }
 
-      ctx.session.carryOverItems = null;
-
       await ctx.editMessageText(`✅ Перенесено задач: ${carryItems.length} на ${formatDateRu(tomorrow)}`);
 
-      // Показать план на завтра
+      // Показать план на целевую дату
       const { data: tomorrowItems } = await getPlanItemsByDate(user.id, tomorrow);
       if (tomorrowItems.length > 0) {
         await sendPlanMessages(ctx, tomorrowItems, { date: tomorrow });
       }
 
-      // Коучинг
-      await showCoaching(ctx, user.id, date);
+      // Коучинг по исходному дню
+      await showCoaching(ctx, user.id, sourceDateStr);
     } catch (error) {
       console.error('[DAYCLOSE] Carry all error:', error.message);
       await ctx.reply('Ошибка при переносе задач.');

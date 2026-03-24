@@ -56,7 +56,7 @@ async function getUsersToRemindNow(nowUtc) {
     const [eH, eM] = eveningStr.split(':').map(Number);
     const morningTotal = mH * 60 + mM;
     const eveningTotal = eH * 60 + eM;
-    const WINDOW = 20; // ±20 минут (покрывает задержки GitHub Actions до 20 мин)
+    const WINDOW = 30; // ±30 минут — покрывает задержки GitHub Actions; двойная отправка предотвращена idempotency (meta.last_morning_sent / last_evening_sent)
 
     // Локальная дата пользователя для idempotency-чека
     let localDateStr;
@@ -66,9 +66,20 @@ async function getUsersToRemindNow(nowUtc) {
       localDateStr = nowUtc.toISOString().split('T')[0];
     }
     const meta = user.meta || {};
+    const isSaturday = localDow && localDow.startsWith('Sat');
 
-    // Morning
-    if (Math.abs(totalNow - morningTotal) <= WINDOW) {
+    // Weekly: суббота — проверяем ДО morning, иначе morning перехватит и continue не даст дойти сюда
+    if (isSaturday && Math.abs(totalNow - morningTotal) <= WINDOW + 60) {
+      if (meta.last_weekly_sent === localDateStr) {
+        console.log(`[REMIND] Skip weekly for ${user.telegram_id}: already sent today`);
+        continue;
+      }
+      result.push({ user, type: 'weekly', localDate: localDateStr });
+      continue;
+    }
+
+    // Morning (не суббота — там weekly)
+    if (!isSaturday && Math.abs(totalNow - morningTotal) <= WINDOW) {
       if (meta.last_morning_sent === localDateStr) {
         console.log(`[REMIND] Skip morning for ${user.telegram_id}: already sent today`);
         continue;
@@ -92,13 +103,6 @@ async function getUsersToRemindNow(nowUtc) {
     const isWeekday = localDow && !['Sat','Sun'].includes(localDow.slice(0, 3));
     if (isWeekday && Math.abs(totalNow - midTotal) <= WINDOW) {
       result.push({ user, type: 'midday', localDate: localDateStr });
-      continue;
-    }
-
-    // Weekly: суббота
-    if (localDow && localDow.startsWith('Sat') && Math.abs(totalNow - morningTotal) <= WINDOW + 60) {
-      // Используем morning window для weekly (отправляем утром в субботу)
-      result.push({ user, type: 'weekly', localDate: localDateStr });
       continue;
     }
 
@@ -466,7 +470,9 @@ async function getStaleMessage(userId) {
 }
 
 async function markReminderSent(userId, type, date) {
-  const key = type === 'morning' ? 'last_morning_sent' : 'last_evening_sent';
+  const keyMap = { morning: 'last_morning_sent', evening: 'last_evening_sent', weekly: 'last_weekly_sent' };
+  const key = keyMap[type];
+  if (!key) return;
   const { data: row } = await supabase.from('users').select('meta').eq('id', userId).single();
   const meta = row?.meta || {};
   await supabase.from('users').update({ meta: { ...meta, [key]: date } }).eq('id', userId);

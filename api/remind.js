@@ -49,7 +49,7 @@ async function sendForUser(user, type, localDate) {
   }
 
   // Idempotency: фиксируем отправку в meta чтобы не дублировать
-  if (localDate && (type === 'morning' || type === 'evening')) {
+  if (localDate && (type === 'morning' || type === 'evening' || type === 'weekly')) {
     markReminderSent(user.id, type, localDate).catch((e) =>
       console.error(`[REMIND] Failed to mark ${type} sent for ${user.telegram_id}:`, e.message)
     );
