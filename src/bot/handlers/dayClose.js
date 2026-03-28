@@ -200,7 +200,6 @@ function registerDayCloseHandlers(bot) {
   bot.action('dayclose_carry_skip', async (ctx) => {
     await ctx.answerCbQuery('⏭');
     try {
-      ctx.session.carryOverItems = null;
       await ctx.editMessageText('⏭ Задачи не перенесены.');
 
       const { data: user } = await getUserByTelegramId(ctx.from.id);
@@ -230,7 +229,6 @@ function registerDayCloseHandlers(bot) {
         }, user.id);
         if (error) {
           await ctx.reply('Не удалось сохранить время.');
-          delete ctx.session.awaitingActualTime;
           return;
         }
         const label = minutes >= 60 ? `${minutes / 60} ч` : `${minutes} мин`;
@@ -238,8 +236,6 @@ function registerDayCloseHandlers(bot) {
       } else {
         await ctx.editMessageText('⏭ Время не зафиксировано');
       }
-
-      delete ctx.session.awaitingActualTime;
     } catch (error) {
       console.error('[DAYCLOSE] Actual time error:', error.message);
     }
@@ -365,7 +361,6 @@ function registerDayCloseHandlers(bot) {
       return;
     }
     ctx.session.awaitingActualTimeManual = itemId;
-    delete ctx.session.awaitingActualTime;
     await setDayClosePendingField(user.id, 'actualTimeManualItemId', itemId);
     await ctx.reply('✏️ Введите время в минутах (например: *45*) или в формате *1:30*:', { parse_mode: 'Markdown' });
   });
@@ -609,7 +604,6 @@ async function handleTaskStatus(ctx, itemId, status) {
     await ctx.editMessageText(`${icon} ${ctx.callbackQuery.message.text}`);
 
     if (status === 'done') {
-      ctx.session.awaitingActualTime = itemId;
       await ctx.reply('⏱ Сколько времени ушло на задачу?', buildActualTimeKeyboard(itemId));
     }
 
