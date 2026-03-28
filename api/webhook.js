@@ -7,9 +7,19 @@ module.exports = async (req, res) => {
     return res.status(200).json({ status: 'Strategist Bot is running' });
   }
 
-  // Проверка секретного токена от Telegram (защита от поддельных запросов)
+  // П.1: в production секрет обязателен (fail-closed). Вне production — прежняя мягкая схема: без env проверка отключена.
+  const isProduction = process.env.NODE_ENV === 'production';
   const webhookSecret = process.env.WEBHOOK_SECRET_TOKEN;
-  if (webhookSecret) {
+  const secretConfigured = !!(webhookSecret && String(webhookSecret).trim());
+
+  if (isProduction && !secretConfigured) {
+    console.error(
+      '[WEBHOOK] Production webhook secret is missing: set WEBHOOK_SECRET_TOKEN (must match Telegram setWebhook secret_token)'
+    );
+    return res.status(503).json({ error: 'Service Unavailable' });
+  }
+
+  if (secretConfigured) {
     const incoming = req.headers['x-telegram-bot-api-secret-token'];
     if (incoming !== webhookSecret) {
       console.warn('[WEBHOOK] Invalid or missing secret token — request rejected');
