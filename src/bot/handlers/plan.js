@@ -1,5 +1,12 @@
 const { Markup } = require('telegraf');
-const { getUserByTelegramId, checkHintAndMark, setPendingPlanDate, clearPendingPlanDate } = require('../../database/queries/users');
+const {
+  getUserByTelegramId,
+  checkHintAndMark,
+  setPendingPlanDate,
+  clearPendingPlanDate,
+  getDayClosePendingFromMeta,
+  clearDayClosePendingField,
+} = require('../../database/queries/users');
 const { getActiveSprints, getSprintById } = require('../../database/queries/sprints');
 const { getPlanItemById } = require('../../database/queries/planItems');
 const { addDayPlanForDate, getTodayPlan, getPlanForDate, formatPlanMessages, getTodayDate, parseDateInput, formatDateRu } = require('../../services/planning');
@@ -137,31 +144,43 @@ function registerPlanHandlers(bot) {
     ctx.session.selectedDate = dateParam;
     const dateLabel = formatDateRu(dateParam);
 
+    const { data: user } = await getUserByTelegramId(ctx.from.id);
+    if (!user) {
+      await ctx.reply('Профиль не найден. Используйте /start.');
+      return;
+    }
+
+    const weeklyItemId =
+      ctx.session.weeklyRescheduleItemId
+      || getDayClosePendingFromMeta(user.meta).weeklyRescheduleItemId;
+
     // Перенос задачи из недельного разбора
-    if (ctx.session.weeklyRescheduleItemId) {
-      const itemId = ctx.session.weeklyRescheduleItemId;
+    if (weeklyItemId) {
+      const itemId = weeklyItemId;
       delete ctx.session.weeklyRescheduleItemId;
       try {
-        const { data: user } = await getUserByTelegramId(ctx.from.id);
         const { getPlanItemById, updatePlanItem, createPlanItemsWithDetails } = require('../../database/queries/planItems');
         const { data: item } = await getPlanItemById(itemId);
-        if (item) {
-          const { data: rescheduled, error: rescheduleError } = await createPlanItemsWithDetails(user.id, dateParam, [{
-            text_raw: item.text_raw,
-            initiative_id: item.initiative_id,
-            is_strategic: item.is_strategic,
-          }]);
-          if (rescheduleError || !rescheduled || rescheduled.length === 0) {
-            await ctx.reply('Ошибка при переносе задачи. Попробуйте ещё раз.');
-            return;
-          }
-          const { error: moveError } = await updatePlanItem(itemId, { status: 'moved' }, user.id);
-          if (moveError) {
-            await ctx.reply('Ошибка при переносе задачи. Попробуйте ещё раз.');
-            return;
-          }
-          await ctx.reply(`📅 Перенесено на ${dateLabel}: _${item.text_raw}_`, { parse_mode: 'Markdown' });
+        if (!item) {
+          await clearDayClosePendingField(user.id, 'weeklyRescheduleItemId');
+          return;
         }
+        const { data: rescheduled, error: rescheduleError } = await createPlanItemsWithDetails(user.id, dateParam, [{
+          text_raw: item.text_raw,
+          initiative_id: item.initiative_id,
+          is_strategic: item.is_strategic,
+        }]);
+        if (rescheduleError || !rescheduled || rescheduled.length === 0) {
+          await ctx.reply('Ошибка при переносе задачи. Попробуйте ещё раз.');
+          return;
+        }
+        const { error: moveError } = await updatePlanItem(itemId, { status: 'moved' }, user.id);
+        if (moveError) {
+          await ctx.reply('Ошибка при переносе задачи. Попробуйте ещё раз.');
+          return;
+        }
+        await clearDayClosePendingField(user.id, 'weeklyRescheduleItemId');
+        await ctx.reply(`📅 Перенесено на ${dateLabel}: _${item.text_raw}_`, { parse_mode: 'Markdown' });
       } catch (err) {
         console.error('[WEEKLY_REVIEW] Reschedule error:', err.message);
         await ctx.reply('Ошибка при переносе задачи.');
@@ -175,7 +194,6 @@ function registerPlanHandlers(bot) {
       ctx.session.pendingForwardText = null;
 
       try {
-        const { data: user } = await getUserByTelegramId(ctx.from.id);
         const { createPlanItems } = require('../../database/queries/planItems');
         const { data: items, error } = await createPlanItems(user.id, dateParam, [text]);
         if (error || !items || items.length === 0) {

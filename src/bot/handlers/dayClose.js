@@ -1,5 +1,12 @@
 const { Markup } = require('telegraf');
-const { getUserByTelegramId, checkHintAndMark } = require('../../database/queries/users');
+const {
+  getUserByTelegramId,
+  checkHintAndMark,
+  getDayClosePendingFromMeta,
+  setDayClosePendingField,
+  clearDayClosePendingField,
+  clearAllDayClosePending,
+} = require('../../database/queries/users');
 const { getPlanItemsByDate, getPlanItemById, updatePlanItem, createPlanItemsWithDetails } = require('../../database/queries/planItems');
 const { getActiveSprint } = require('../../database/queries/sprints');
 const { getDayStats, formatDayStats } = require('../../services/analytics');
@@ -282,7 +289,13 @@ function registerDayCloseHandlers(bot) {
   bot.action(/^weekly_reschedule_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     const itemId = ctx.match[1];
+    const { data: user } = await getUserByTelegramId(ctx.from.id);
+    if (!user) {
+      await ctx.reply('Профиль не найден. Используйте /start.');
+      return;
+    }
     ctx.session.weeklyRescheduleItemId = itemId;
+    await setDayClosePendingField(user.id, 'weeklyRescheduleItemId', itemId);
     await ctx.reply('📅 На какую дату перенести?', buildDatePickerKeyboard(14));
   });
 
@@ -290,7 +303,13 @@ function registerDayCloseHandlers(bot) {
   bot.action(/^weekly_simplify_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     const itemId = ctx.match[1];
+    const { data: user } = await getUserByTelegramId(ctx.from.id);
+    if (!user) {
+      await ctx.reply('Профиль не найден. Используйте /start.');
+      return;
+    }
     ctx.session.awaitingWeeklySimplify = itemId;
+    await setDayClosePendingField(user.id, 'weeklySimplifyItemId', itemId);
     await ctx.editMessageText(`✂️ ${ctx.callbackQuery.message.text}\n\nНапишите упрощённую версию задачи:`);
   });
 
@@ -340,8 +359,14 @@ function registerDayCloseHandlers(bot) {
   bot.action(/^actual_time_manual_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     const itemId = ctx.match[1];
+    const { data: user } = await getUserByTelegramId(ctx.from.id);
+    if (!user) {
+      await ctx.reply('Профиль не найден. Используйте /start.');
+      return;
+    }
     ctx.session.awaitingActualTimeManual = itemId;
     delete ctx.session.awaitingActualTime;
+    await setDayClosePendingField(user.id, 'actualTimeManualItemId', itemId);
     await ctx.reply('✏️ Введите время в минутах (например: *45*) или в формате *1:30*:', { parse_mode: 'Markdown' });
   });
 
@@ -372,14 +397,23 @@ function registerDayCloseHandlers(bot) {
   // Кнопка "Ответить" на коучинговый вопрос
   bot.action(/^coaching_answer_(\d+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const questionId = parseInt(ctx.match[1]);
+    const questionId = parseInt(ctx.match[1], 10);
+    const { data: user } = await getUserByTelegramId(ctx.from.id);
+    if (!user) {
+      await ctx.reply('Профиль не найден. Используйте /start.');
+      return;
+    }
     ctx.session.awaitingCoachingAnswer = questionId;
+    await setDayClosePendingField(user.id, 'coachingQuestionId', questionId);
     await ctx.reply('💬 Напишите ваш ответ:');
   });
 
   // Кнопка "Пропустить" коучинг
   bot.action('coaching_skip', async (ctx) => {
     await ctx.answerCbQuery('⏭');
+    delete ctx.session.awaitingCoachingAnswer;
+    const { data: user } = await getUserByTelegramId(ctx.from.id);
+    if (user) await clearDayClosePendingField(user.id, 'coachingQuestionId');
     await ctx.editMessageText('⏭ Вопрос пропущен.');
     await ctx.reply('Хорошего вечера!', persistentKeyboard);
   });
@@ -390,15 +424,24 @@ function registerDayCloseHandlers(bot) {
     if (KEYBOARD_BUTTONS.includes(ctx.message.text)) {
       ctx.session.awaitingCoachingAnswer = null;
       ctx.session.awaitingActualTimeManual = null;
+      delete ctx.session.awaitingWeeklySimplify;
+      delete ctx.session.weeklyRescheduleItemId;
+      const { data: userKb } = await getUserByTelegramId(ctx.from.id);
+      if (userKb) await clearAllDayClosePending(userKb.id);
       return next();
     }
 
+    const { data: user } = await getUserByTelegramId(ctx.from.id);
+    if (!user) return next();
+
+    const metaPending = getDayClosePendingFromMeta(user.meta);
+
     // Упрощение задачи (недельный разбор)
-    if (ctx.session?.awaitingWeeklySimplify) {
-      const itemId = ctx.session.awaitingWeeklySimplify;
+    const simplifyId = ctx.session?.awaitingWeeklySimplify || metaPending.weeklySimplifyItemId;
+    if (simplifyId) {
+      const itemId = simplifyId;
       delete ctx.session.awaitingWeeklySimplify;
-      const { data: user } = await getUserByTelegramId(ctx.from.id);
-      if (!user) return;
+      await clearDayClosePendingField(user.id, 'weeklySimplifyItemId');
       const { error } = await updatePlanItem(itemId, { text_raw: ctx.message.text.trim() }, user.id);
       if (error) {
         await ctx.reply('Не удалось обновить задачу.');
@@ -409,16 +452,16 @@ function registerDayCloseHandlers(bot) {
     }
 
     // Ручной ввод фактического времени
-    if (ctx.session?.awaitingActualTimeManual) {
-      const itemId = ctx.session.awaitingActualTimeManual;
+    const manualTimeId = ctx.session?.awaitingActualTimeManual || metaPending.actualTimeManualItemId;
+    if (manualTimeId) {
+      const itemId = manualTimeId;
       const minutes = parseTimeInput(ctx.message.text);
       if (!minutes) {
         await ctx.reply('Не понял. Введите минуты числом (например: *45*) или формат *1:30*:', { parse_mode: 'Markdown' });
         return;
       }
       delete ctx.session.awaitingActualTimeManual;
-      const { data: user } = await getUserByTelegramId(ctx.from.id);
-      if (!user) return;
+      await clearDayClosePendingField(user.id, 'actualTimeManualItemId');
       const { error } = await updatePlanItem(itemId, { actual_minutes: minutes, last_worked_at: new Date().toISOString() }, user.id);
       if (error) {
         await ctx.reply('Не удалось сохранить время.');
@@ -428,11 +471,13 @@ function registerDayCloseHandlers(bot) {
       return;
     }
 
-    if (!ctx.session?.awaitingCoachingAnswer) return next();
+    const coachingQ = ctx.session?.awaitingCoachingAnswer ?? metaPending.coachingQuestionId;
+    if (coachingQ == null) return next();
 
     try {
-      const questionId = ctx.session.awaitingCoachingAnswer;
-      ctx.session.awaitingCoachingAnswer = null;
+      const questionId = coachingQ;
+      delete ctx.session.awaitingCoachingAnswer;
+      await clearDayClosePendingField(user.id, 'coachingQuestionId');
 
       await saveCoachingAnswer(questionId, ctx.message.text);
       await ctx.reply('✅ Спасибо за ответ! Рефлексия — ключ к стратегическому фокусу.', persistentKeyboard);

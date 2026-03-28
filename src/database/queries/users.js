@@ -98,6 +98,80 @@ function clearPendingPlanDate(userId) {
     .catch(() => {});
 }
 
+/** Ключи в users.meta для восстановления шагов day close / weekly review после потери session */
+const DAY_CLOSE_PENDING_META_KEYS = {
+  coachingQuestionId: 'dc_coaching_question_id',
+  actualTimeManualItemId: 'dc_actual_time_manual_item_id',
+  weeklySimplifyItemId: 'dc_weekly_simplify_item_id',
+  weeklyRescheduleItemId: 'dc_weekly_reschedule_item_id',
+};
+
+function getDayClosePendingFromMeta(meta) {
+  const m = meta || {};
+  const q = m[DAY_CLOSE_PENDING_META_KEYS.coachingQuestionId];
+  const n = q != null && q !== '' ? Number(q) : NaN;
+  return {
+    coachingQuestionId: Number.isFinite(n) ? n : null,
+    actualTimeManualItemId: m[DAY_CLOSE_PENDING_META_KEYS.actualTimeManualItemId] || null,
+    weeklySimplifyItemId: m[DAY_CLOSE_PENDING_META_KEYS.weeklySimplifyItemId] || null,
+    weeklyRescheduleItemId: m[DAY_CLOSE_PENDING_META_KEYS.weeklyRescheduleItemId] || null,
+  };
+}
+
+async function mergeUserMeta(userId, mutator) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('meta')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    console.error('[DB] mergeUserMeta read:', error.message);
+    return { error };
+  }
+
+  const meta = { ...(data?.meta || {}) };
+  mutator(meta);
+
+  const { error: upError } = await supabase
+    .from('users')
+    .update({ meta })
+    .eq('id', userId);
+
+  if (upError) {
+    console.error('[DB] mergeUserMeta update:', upError.message);
+  }
+  return { error: upError };
+}
+
+async function setDayClosePendingField(userId, field, value) {
+  const key = DAY_CLOSE_PENDING_META_KEYS[field];
+  if (!key) {
+    return { error: new Error(`Unknown day close pending field: ${field}`) };
+  }
+  return mergeUserMeta(userId, (meta) => {
+    if (value == null || value === '') {
+      delete meta[key];
+    } else if (field === 'coachingQuestionId') {
+      meta[key] = Number(value);
+    } else {
+      meta[key] = String(value);
+    }
+  });
+}
+
+async function clearDayClosePendingField(userId, field) {
+  return setDayClosePendingField(userId, field, null);
+}
+
+async function clearAllDayClosePending(userId) {
+  return mergeUserMeta(userId, (meta) => {
+    Object.values(DAY_CLOSE_PENDING_META_KEYS).forEach((k) => {
+      delete meta[k];
+    });
+  });
+}
+
 async function updateUserSettings(userId, { reminderMorning, reminderEvening, remindersEnabled, timezone } = {}) {
   const updates = {};
   if (reminderMorning  !== undefined) updates.reminder_morning   = reminderMorning;
@@ -118,4 +192,16 @@ async function updateUserSettings(userId, { reminderMorning, reminderEvening, re
   return { data, error };
 }
 
-module.exports = { findOrCreateUser, getUserByTelegramId, touchUserActivity, checkHintAndMark, setPendingPlanDate, clearPendingPlanDate, updateUserSettings };
+module.exports = {
+  findOrCreateUser,
+  getUserByTelegramId,
+  touchUserActivity,
+  checkHintAndMark,
+  setPendingPlanDate,
+  clearPendingPlanDate,
+  updateUserSettings,
+  getDayClosePendingFromMeta,
+  setDayClosePendingField,
+  clearDayClosePendingField,
+  clearAllDayClosePending,
+};
