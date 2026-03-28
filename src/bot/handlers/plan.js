@@ -155,7 +155,11 @@ function registerPlanHandlers(bot) {
             await ctx.reply('Ошибка при переносе задачи. Попробуйте ещё раз.');
             return;
           }
-          await updatePlanItem(itemId, { status: 'moved' });
+          const { error: moveError } = await updatePlanItem(itemId, { status: 'moved' }, user.id);
+          if (moveError) {
+            await ctx.reply('Ошибка при переносе задачи. Попробуйте ещё раз.');
+            return;
+          }
           await ctx.reply(`📅 Перенесено на ${dateLabel}: _${item.text_raw}_`, { parse_mode: 'Markdown' });
         }
       } catch (err) {
@@ -252,8 +256,17 @@ function registerPlanHandlers(bot) {
         return;
       }
       delete ctx.session.awaitingPlannedTimeManual;
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) {
+        await ctx.reply('Профиль не найден. Используйте /start.');
+        return;
+      }
       const { updatePlanItem } = require('../../database/queries/planItems');
-      await updatePlanItem(itemId, { planned_minutes: minutes });
+      const { error: planTimeError } = await updatePlanItem(itemId, { planned_minutes: minutes }, user.id);
+      if (planTimeError) {
+        await ctx.reply('Не удалось сохранить плановое время.');
+        return;
+      }
       await ctx.reply(`✅ Запланировано: ${formatMinutesLabel(minutes)}`);
       const items = ctx.session?.qualificationItems || [];
       if (items.length > 0) await finishQualification(ctx);
@@ -362,6 +375,12 @@ function registerPlanHandlers(bot) {
   bot.action(/^qualify_sprint_([^_]+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) {
+        await ctx.reply('Профиль не найден. Используйте /start.');
+        return;
+      }
+
       const sprintId = ctx.match[1];
       const itemId = ctx.match[2];
 
@@ -382,7 +401,11 @@ function registerPlanHandlers(bot) {
 
       if (initiatives.length === 0) {
         const { updatePlanItem } = require('../../database/queries/planItems');
-        await updatePlanItem(itemId, { initiative_id: null, is_strategic: true });
+        const { error: upErr } = await updatePlanItem(itemId, { initiative_id: null, is_strategic: true }, user.id);
+        if (upErr) {
+          await ctx.reply('Не удалось обновить задачу.');
+          return;
+        }
         await askKeyTaskQuestion(ctx, item || { id: itemId, text_raw: '' });
       } else {
         await sendQualificationQuestion(ctx, item || { id: itemId, text_raw: '' }, initiatives);
@@ -397,11 +420,21 @@ function registerPlanHandlers(bot) {
   bot.action(/^qualify_init_([^_]+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) {
+        await ctx.reply('Профиль не найден. Используйте /start.');
+        return;
+      }
+
       const initiativeId = ctx.match[1];
       const itemId = ctx.match[2];
 
       const { updatePlanItem } = require('../../database/queries/planItems');
-      await updatePlanItem(itemId, { initiative_id: initiativeId, is_strategic: true });
+      const { error: upErr } = await updatePlanItem(itemId, { initiative_id: initiativeId, is_strategic: true }, user.id);
+      if (upErr) {
+        await ctx.reply('Не удалось обновить задачу.');
+        return;
+      }
 
       const initiatives = ctx.session?.qualificationInitiatives || [];
       const initiative = initiatives.find((i) => String(i.id) === initiativeId);
@@ -422,10 +455,20 @@ function registerPlanHandlers(bot) {
   bot.action(/^qualify_fire_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) {
+        await ctx.reply('Профиль не найден. Используйте /start.');
+        return;
+      }
+
       const itemId = ctx.match[1];
 
       const { updatePlanItem } = require('../../database/queries/planItems');
-      await updatePlanItem(itemId, { initiative_id: null, is_strategic: false });
+      const { error: upErr } = await updatePlanItem(itemId, { initiative_id: null, is_strategic: false }, user.id);
+      if (upErr) {
+        await ctx.reply('Не удалось обновить задачу.');
+        return;
+      }
 
       const { data: item } = await getPlanItemById(itemId);
       const itemText = item?.text_raw || '';
@@ -533,6 +576,12 @@ function registerPlanHandlers(bot) {
   bot.action(/^requalify_sprint_([^_]+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) {
+        await ctx.reply('Профиль не найден. Используйте /start.');
+        return;
+      }
+
       const sprintId = ctx.match[1];
       const itemId = ctx.match[2];
       const sprints = ctx.session?.requalifySprints || [];
@@ -544,7 +593,11 @@ function registerPlanHandlers(bot) {
       const initiatives = sprint.initiatives || [];
       if (initiatives.length === 0) {
         const { updatePlanItem } = require('../../database/queries/planItems');
-        await updatePlanItem(itemId, { initiative_id: null, is_strategic: true });
+        const { error: upErr } = await updatePlanItem(itemId, { initiative_id: null, is_strategic: true }, user.id);
+        if (upErr) {
+          await ctx.reply('Не удалось обновить задачу.');
+          return;
+        }
         await ctx.editMessageText('📊 По стратегии ✅');
         return;
       }
@@ -563,11 +616,21 @@ function registerPlanHandlers(bot) {
   bot.action(/^requalify_init_([^_]+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) {
+        await ctx.reply('Профиль не найден. Используйте /start.');
+        return;
+      }
+
       const initiativeId = ctx.match[1];
       const itemId = ctx.match[2];
 
       const { updatePlanItem } = require('../../database/queries/planItems');
-      await updatePlanItem(itemId, { initiative_id: initiativeId, is_strategic: true });
+      const { error: upErr } = await updatePlanItem(itemId, { initiative_id: initiativeId, is_strategic: true }, user.id);
+      if (upErr) {
+        await ctx.reply('Не удалось обновить задачу.');
+        return;
+      }
 
       // Ищем название инициативы из session (requalify или qualification)
       const sessionSprints = ctx.session?.requalifySprints || ctx.session?.qualificationSprints || [];
@@ -587,9 +650,19 @@ function registerPlanHandlers(bot) {
   bot.action(/^requalify_fire_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) {
+        await ctx.reply('Профиль не найден. Используйте /start.');
+        return;
+      }
+
       const itemId = ctx.match[1];
       const { updatePlanItem } = require('../../database/queries/planItems');
-      await updatePlanItem(itemId, { initiative_id: null, is_strategic: false });
+      const { error: upErr } = await updatePlanItem(itemId, { initiative_id: null, is_strategic: false }, user.id);
+      if (upErr) {
+        await ctx.reply('Не удалось обновить задачу.');
+        return;
+      }
       await ctx.editMessageText('🔥 Вне стратегии ✅');
     } catch (error) {
       console.error('[PLAN] Requalify error:', error.message);
@@ -601,9 +674,19 @@ function registerPlanHandlers(bot) {
   bot.action(/^key_task_yes_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('⭐');
     try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) {
+        await ctx.reply('Профиль не найден. Используйте /start.');
+        return;
+      }
+
       const itemId = ctx.match[1];
       const { updatePlanItem } = require('../../database/queries/planItems');
-      await updatePlanItem(itemId, { is_key_task: true });
+      const { error: upErr } = await updatePlanItem(itemId, { is_key_task: true }, user.id);
+      if (upErr) {
+        await ctx.reply('Не удалось обновить задачу.');
+        return;
+      }
       ctx.session.qualificationKeyTaskSet = true;
       await ctx.editMessageText('⭐ Задача дня!');
       await advanceToNextQualification(ctx);
@@ -636,12 +719,22 @@ function registerPlanHandlers(bot) {
   bot.action(/^planned_time_(\d+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) {
+        await ctx.reply('Профиль не найден. Используйте /start.');
+        return;
+      }
+
       const minutes = parseInt(ctx.match[1], 10);
       const itemId = ctx.match[2];
 
       if (minutes > 0) {
         const { updatePlanItem } = require('../../database/queries/planItems');
-        await updatePlanItem(itemId, { planned_minutes: minutes });
+        const { error: upErr } = await updatePlanItem(itemId, { planned_minutes: minutes }, user.id);
+        if (upErr) {
+          await ctx.reply('Не удалось сохранить плановое время.');
+          return;
+        }
         const label = minutes >= 60 ? `${minutes / 60} ч` : `${minutes} мин`;
         await ctx.editMessageText(`⏱ Запланировано: ${label}`);
       } else {
@@ -770,6 +863,12 @@ async function sendQualificationQuestion(ctx, item, initiatives) {
 
 // Запускает квалификацию для одной задачи с учётом числа спринтов
 async function startQualificationForItem(ctx, item, sprints) {
+  const { data: user } = await getUserByTelegramId(ctx.from.id);
+  if (!user) {
+    await ctx.reply('Профиль не найден. Используйте /start.');
+    return;
+  }
+
   if (!sprints || sprints.length === 0) {
     const header = buildQualificationHeader(ctx);
     await editOrReplyQualification(
@@ -791,7 +890,11 @@ async function startQualificationForItem(ctx, item, sprints) {
     if (initiatives.length === 0) {
       // Нет инициатив — автоматически стратегическая
       const { updatePlanItem } = require('../../database/queries/planItems');
-      await updatePlanItem(item.id, { initiative_id: null, is_strategic: true });
+      const { error: upErr } = await updatePlanItem(item.id, { initiative_id: null, is_strategic: true }, user.id);
+      if (upErr) {
+        await ctx.reply('Не удалось обновить задачу.');
+        return;
+      }
       await askKeyTaskQuestion(ctx, item);
       return;
     }

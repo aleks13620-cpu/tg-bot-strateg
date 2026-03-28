@@ -54,15 +54,29 @@ async function getPlanItemsByDate(userId, date) {
   return { data: data || [], error: null };
 }
 
-async function updatePlanItem(itemId, updates) {
+async function updatePlanItem(itemId, updates, userId) {
+  if (itemId == null || userId == null) {
+    return {
+      data: null,
+      error: { message: 'itemId and userId are required', code: 'BAD_ARGS' },
+    };
+  }
+
   const { data, error } = await supabase
     .from('plan_items')
     .update(updates)
     .eq('id', itemId)
+    .eq('user_id', userId)
     .select()
     .single();
 
   if (error) {
+    if (error.code === 'PGRST116') {
+      return {
+        data: null,
+        error: { ...error, message: 'Plan item not found or access denied', code: 'PGRST116' },
+      };
+    }
     console.error('[DB] Error updating plan item:', error.message);
   }
   return { data, error };

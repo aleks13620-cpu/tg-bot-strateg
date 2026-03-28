@@ -163,7 +163,11 @@ function registerDayCloseHandlers(bot) {
 
       // Помечаем оригиналы как перенесённые
       for (const item of carryItems) {
-        await updatePlanItem(item.id, { status: 'moved' });
+        const { error: moveItemError } = await updatePlanItem(item.id, { status: 'moved' }, user.id);
+        if (moveItemError) {
+          await ctx.reply('Ошибка при завершении переноса. Попробуйте ещё раз.');
+          return;
+        }
       }
 
       await ctx.editMessageText(`✅ Перенесено задач: ${carryItems.length} на ${formatDateRu(tomorrow)}`);
@@ -203,14 +207,22 @@ function registerDayCloseHandlers(bot) {
   bot.action(/^actual_time_(\d+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+
       const minutes = parseInt(ctx.match[1], 10);
       const itemId = ctx.match[2];
 
       if (minutes > 0) {
-        await updatePlanItem(itemId, {
+        const { error } = await updatePlanItem(itemId, {
           actual_minutes: minutes,
           last_worked_at: new Date().toISOString(),
-        });
+        }, user.id);
+        if (error) {
+          await ctx.reply('Не удалось сохранить время.');
+          delete ctx.session.awaitingActualTime;
+          return;
+        }
         const label = minutes >= 60 ? `${minutes / 60} ч` : `${minutes} мин`;
         await ctx.editMessageText(`⏱ ${label} зафиксировано`);
       } else {
@@ -284,7 +296,10 @@ function registerDayCloseHandlers(bot) {
     await ctx.answerCbQuery();
     try {
       const itemId = ctx.match[1];
-      const { error: cancelError } = await updatePlanItem(itemId, { status: 'moved' });
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+
+      const { error: cancelError } = await updatePlanItem(itemId, { status: 'moved' }, user.id);
       if (cancelError) {
         await ctx.reply('Ошибка при отмене задачи.');
         return;
@@ -299,11 +314,18 @@ function registerDayCloseHandlers(bot) {
   bot.action(/^skip_r_([^_]+)_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+
       const code = ctx.match[1];
       const itemId = ctx.match[2];
       const skipReason = SKIP_REASON_MAP[code];
       if (skipReason) {
-        await updatePlanItem(itemId, { skip_reason: skipReason });
+        const { error } = await updatePlanItem(itemId, { skip_reason: skipReason }, user.id);
+        if (error) {
+          await ctx.reply('Не удалось сохранить причину.');
+          return;
+        }
       }
       await ctx.editMessageText(`⏭ Причина: ${SKIP_REASON_LABELS[code] || 'Другое'}`);
     } catch (error) {
@@ -372,7 +394,13 @@ function registerDayCloseHandlers(bot) {
     if (ctx.session?.awaitingWeeklySimplify) {
       const itemId = ctx.session.awaitingWeeklySimplify;
       delete ctx.session.awaitingWeeklySimplify;
-      await updatePlanItem(itemId, { text_raw: ctx.message.text.trim() });
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+      const { error } = await updatePlanItem(itemId, { text_raw: ctx.message.text.trim() }, user.id);
+      if (error) {
+        await ctx.reply('Не удалось обновить задачу.');
+        return;
+      }
       await ctx.reply(`✅ Задача упрощена: _${ctx.message.text.trim()}_`, { parse_mode: 'Markdown' });
       return;
     }
@@ -386,7 +414,13 @@ function registerDayCloseHandlers(bot) {
         return;
       }
       delete ctx.session.awaitingActualTimeManual;
-      await updatePlanItem(itemId, { actual_minutes: minutes, last_worked_at: new Date().toISOString() });
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+      const { error } = await updatePlanItem(itemId, { actual_minutes: minutes, last_worked_at: new Date().toISOString() }, user.id);
+      if (error) {
+        await ctx.reply('Не удалось сохранить время.');
+        return;
+      }
       await ctx.reply(`✅ Зафиксировано: ${formatMinutesLabel(minutes)}`);
       return;
     }
@@ -511,7 +545,13 @@ async function startDayClose(ctx) {
 
 async function handleTaskStatus(ctx, itemId, status) {
   try {
-    const { error } = await updatePlanItem(itemId, { status });
+    const { data: user } = await getUserByTelegramId(ctx.from.id);
+    if (!user) {
+      await ctx.reply('Профиль не найден. Используйте /start.');
+      return;
+    }
+
+    const { error } = await updatePlanItem(itemId, { status }, user.id);
     if (error) {
       await ctx.reply('Ошибка при обновлении задачи.');
       return;

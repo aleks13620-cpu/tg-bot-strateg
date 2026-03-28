@@ -157,7 +157,7 @@ function registerTodayHandlers(bot) {
         return;
       }
 
-      const { error: doneError } = await updatePlanItem(pending.id, { status: 'done' });
+      const { error: doneError } = await updatePlanItem(pending.id, { status: 'done' }, user.id);
       if (doneError) {
         await ctx.reply('Ошибка при обновлении задачи.');
         return;
@@ -201,7 +201,11 @@ function registerTodayHandlers(bot) {
       tomorrow.setDate(tomorrow.getDate() + 1);
       const tomorrowDate = tomorrow.toISOString().split('T')[0];
 
-      await updatePlanItem(itemId, { date: tomorrowDate });
+      const { error: postponeError } = await updatePlanItem(itemId, { date: tomorrowDate }, user.id);
+      if (postponeError) {
+        await ctx.reply('Ошибка при обновлении задачи.');
+        return;
+      }
 
       const date = getTodayDate();
       const [{ data: items }, { data: sprint }, streak, stats] = await Promise.all([
@@ -265,7 +269,11 @@ function registerTodayHandlers(bot) {
       const { data: user } = await getUserByTelegramId(ctx.from.id);
       if (!user) return;
 
-      await updatePlanItem(itemId, { date: newDate });
+      const { error: moveError } = await updatePlanItem(itemId, { date: newDate }, user.id);
+      if (moveError) {
+        await ctx.reply('Ошибка при обновлении задачи.');
+        return;
+      }
       await ctx.editMessageText(`📅 Задача перенесена на ${formatDateRu(newDate)}`);
     } catch (error) {
       console.error('[STALE] Move error:', error.message);
@@ -340,7 +348,7 @@ async function handleTodayStatus(ctx, itemId, status) {
     const { data: user } = await getUserByTelegramId(ctx.from.id);
     if (!user) return;
 
-    const { error } = await updatePlanItem(itemId, { status });
+    const { error } = await updatePlanItem(itemId, { status }, user.id);
     if (error) {
       await ctx.reply('Ошибка при обновлении задачи.');
       return;
@@ -382,13 +390,13 @@ async function handleStaleAction(ctx, itemId, action) {
     if (!user) return;
 
     if (action === 'done') {
-      const { error } = await updatePlanItem(itemId, { status: 'done' });
+      const { error } = await updatePlanItem(itemId, { status: 'done' }, user.id);
       if (error) { await ctx.reply('Ошибка при обновлении задачи.'); return; }
     } else if (action === 'skipped') {
-      const { error } = await updatePlanItem(itemId, { status: 'skipped' });
+      const { error } = await updatePlanItem(itemId, { status: 'skipped' }, user.id);
       if (error) { await ctx.reply('Ошибка при обновлении задачи.'); return; }
     } else if (action === 'today') {
-      const { error } = await updatePlanItem(itemId, { date: getTodayDate() });
+      const { error } = await updatePlanItem(itemId, { date: getTodayDate() }, user.id);
       if (error) { await ctx.reply('Ошибка при обновлении задачи.'); return; }
     }
 
