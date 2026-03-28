@@ -1,4 +1,5 @@
 const { getDayStats } = require('../analytics');
+const { getIsoCalendarWeekday } = require('../../utils/userCalendarDate');
 const { saveCoachingQuestion } = require('../../database/queries/coaching');
 const {
   LOW_SFI_QUESTIONS,
@@ -18,7 +19,7 @@ async function generateCoaching(userId, date) {
   const stats = await getDayStats(userId, date);
   if (!stats || stats.total === 0) return null;
 
-  const isFriday = new Date(date).getDay() === 5;
+  const isFriday = getIsoCalendarWeekday(date) === 5;
 
   // Правило 1: Пятница — мотивационное сообщение
   if (isFriday) {

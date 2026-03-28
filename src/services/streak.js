@@ -1,10 +1,5 @@
 const { supabase } = require('../../config/database');
-
-function getYesterday(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00Z');
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().split('T')[0];
-}
+const { getPreviousCalendarDay } = require('../utils/userCalendarDate');
 
 /**
  * Обновляет стрик пользователя при закрытии дня.
@@ -31,7 +26,7 @@ async function updateStreak(userId, closeDate) {
   }
 
   let newStreak;
-  if (lastClose && lastClose === getYesterday(closeDate)) {
+  if (lastClose && lastClose === getPreviousCalendarDay(closeDate)) {
     // Вчера тоже закрывали — продолжаем стрик
     newStreak = (user.streak_current || 0) + 1;
   } else {

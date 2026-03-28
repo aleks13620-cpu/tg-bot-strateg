@@ -3,7 +3,12 @@ const { getUserByTelegramId, checkHintAndMark } = require('../../database/querie
 const { getPlanItemsByDate, getPlanItemById, updatePlanItem, createPlanItemsWithDetails } = require('../../database/queries/planItems');
 const { getActiveSprint } = require('../../database/queries/sprints');
 const { getDayStats, formatDayStats } = require('../../services/analytics');
-const { getTodayDate, getTomorrowDate, formatDateRu } = require('../../services/planning');
+const { formatDateRu } = require('../../services/planning');
+const {
+  getUserCalendarToday,
+  getUserCalendarTomorrow,
+  getPreviousCalendarDay,
+} = require('../../utils/userCalendarDate');
 const { generateCoaching } = require('../../services/coaching/simpleCoaching');
 const { saveCoachingAnswer, getLastUnansweredQuestion } = require('../../database/queries/coaching');
 const { persistentKeyboard, KEYBOARD_BUTTONS } = require('../../utils/keyboards');
@@ -49,7 +54,7 @@ function registerDayCloseHandlers(bot) {
       const { data: user } = await getUserByTelegramId(ctx.from.id);
       if (!user) return;
 
-      const date = getTodayDate();
+      const date = getUserCalendarToday(user);
 
       // Блок 4.3: показать незавершённые задачи (pending) — работал / нет
       const { data: allItems } = await getPlanItemsByDate(user.id, date);
@@ -108,7 +113,7 @@ function registerDayCloseHandlers(bot) {
           const tag = item.initiative ? ` [${item.initiative.title}]` : '';
           msg += `${i + 1}. ${item.text_raw}${tag}\n`;
         });
-        const tomorrow = getTomorrowDate();
+        const tomorrow = getUserCalendarTomorrow(user);
         msg += `\nПеренести на ${formatDateRu(tomorrow)}?`;
 
         // Дата вшита в callback — не зависим от сессии (cold start / потеря сессии не ломает перенос)
@@ -134,10 +139,8 @@ function registerDayCloseHandlers(bot) {
 
       const tomorrow = ctx.match[1]; // дата из callback — фиксирована в момент создания кнопки
 
-      // Исходная дата = день перед tomorrow; по ней ищем skipped задачи
-      const sourceDate = new Date(tomorrow + 'T00:00:00Z');
-      sourceDate.setUTCDate(sourceDate.getUTCDate() - 1);
-      const sourceDateStr = sourceDate.toISOString().split('T')[0];
+      // Исходная дата = календарный день перед tomorrow (как при переносе из summary)
+      const sourceDateStr = getPreviousCalendarDay(tomorrow);
 
       const { data: allItems } = await getPlanItemsByDate(user.id, sourceDateStr);
       const carryItems = (allItems || [])
@@ -196,7 +199,7 @@ function registerDayCloseHandlers(bot) {
       const { data: user } = await getUserByTelegramId(ctx.from.id);
       if (!user) return;
 
-      const date = getTodayDate();
+      const date = getUserCalendarToday(user);
       await showCoaching(ctx, user.id, date);
     } catch (error) {
       console.error('[DAYCLOSE] Carry skip error:', error.message);
@@ -490,7 +493,7 @@ async function startDayClose(ctx) {
       return;
     }
 
-    const date = getTodayDate();
+    const date = getUserCalendarToday(user);
     const { data: items } = await getPlanItemsByDate(user.id, date);
 
     if (items.length === 0) {
