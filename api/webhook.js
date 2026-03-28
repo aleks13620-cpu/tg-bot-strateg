@@ -17,14 +17,24 @@ module.exports = async (req, res) => {
     }
   }
 
+  // П.4 (webhook): при исключении из handleUpdate отдаём не-200 (500), чтобы внешняя доставка
+  // могла трактовать запрос как неуспешный и Telegram имел шанс повторить тот же update.
+  // Осознанный компромисс: повторная доставка того же update_id возможна — без отдельной
+  // дедупликации это риск повторной обработки / дубликатов; здесь только фиксируем риск, не решаем его.
   const start = Date.now();
   try {
     await bot.handleUpdate(req.body);
     console.log(`[WEBHOOK] Update ${req.body?.update_id} processed in ${Date.now() - start}ms`);
+    return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('[WEBHOOK] Error processing update:', error.message);
+    const updateId = req.body?.update_id;
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error('[WEBHOOK] Error processing update', {
+      update_id: updateId,
+      message,
+      ...(stack ? { stack } : {}),
+    });
+    return res.status(500).json({ ok: false });
   }
-
-  // Всегда 200 — иначе Telegram перестанет отправлять обновления
-  res.status(200).json({ ok: true });
 };
