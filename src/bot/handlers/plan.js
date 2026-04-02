@@ -23,6 +23,21 @@ function withTimeout(promise, ms) {
 }
 
 function registerPlanHandlers(bot) {
+  function resetSingleTaskPlanningState(ctx) {
+    ctx.session.awaitingSingleTaskText = false;
+    ctx.session.singleTaskDate = null;
+    ctx.session.singleTaskMode = false;
+  }
+
+  async function startSingleTaskPlanning(ctx, dateIso) {
+    ctx.session.singleTaskMode = true;
+    ctx.session.singleTaskDate = dateIso;
+    ctx.session.awaitingSingleTaskText = true;
+    await ctx.reply(
+      `📝 Введите одну задачу на ${formatDateRu(dateIso)}:`
+    );
+  }
+
   async function showEditTasks(ctx) {
     const { data: user } = await getUserByTelegramId(ctx.from.id);
     if (!user) return;
@@ -70,6 +85,7 @@ function registerPlanHandlers(bot) {
         sprintContext + '📅 На какую дату добавить задачи?',
         { parse_mode: 'Markdown', ...buildDatePickerKeyboard(14) }
       );
+      ctx.session.singleTaskMode = true;
 
       // Подсказка: первое использование /plan
       const showHint = await checkHintAndMark(user.id, 'hint_first_plan');
@@ -160,6 +176,7 @@ function registerPlanHandlers(bot) {
   // Добавить задачи — дейтпикер
   bot.action('action_plan_add', async (ctx) => {
     await ctx.answerCbQuery();
+    ctx.session.singleTaskMode = true;
     await ctx.reply('📅 На какую дату добавить задачи?', buildDatePickerKeyboard(14));
   });
 
@@ -263,9 +280,8 @@ function registerPlanHandlers(bot) {
       return;
     }
 
-    // Обычное добавление задач
-    ctx.session.awaitingPlanInput = true;
-    await ctx.reply(`📝 Напишите задачи на ${dateLabel} — каждая с новой строки или через запятую:`);
+    // Обычное добавление задач: по одной в пошаговом режиме
+    await startSingleTaskPlanning(ctx, dateParam);
   });
 
   // Обработчик пересланных сообщений (должен быть ДО bot.on('text'))
@@ -309,7 +325,61 @@ function registerPlanHandlers(bot) {
       ctx.session.pendingForwardText = null;
       ctx.session.awaitingEditTaskNumber = false;
       ctx.session.editTasksItems = null;
+      resetSingleTaskPlanningState(ctx);
       return next();
+    }
+
+    // Пошаговое планирование: одна задача за раз
+    if (ctx.session?.awaitingSingleTaskText) {
+      const text = ctx.message.text.trim();
+      if (!text) {
+        await ctx.reply('Пожалуйста, введите текст одной задачи.');
+        return;
+      }
+
+      try {
+        const { data: user } = await withTimeout(getUserByTelegramId(ctx.from.id), DB_TIMEOUT_MS);
+        if (!user) {
+          await ctx.reply('Профиль не найден. Используйте /start.');
+          return;
+        }
+
+        const date = ctx.session.singleTaskDate || getTodayDate();
+        const { createPlanItems } = require('../../database/queries/planItems');
+        const { data: items, error } = await withTimeout(createPlanItems(user.id, date, [text]), DB_TIMEOUT_MS);
+        if (error || !items || items.length === 0) {
+          await ctx.reply('Ошибка при добавлении задачи.');
+          return;
+        }
+
+        ctx.session.awaitingSingleTaskText = false;
+        ctx.session.qualificationDate = date;
+
+        const { data: sprints } = await withTimeout(getActiveSprints(user.id), DB_TIMEOUT_MS);
+        ctx.session.qualificationItems = items;
+        ctx.session.qualificationIndex = 0;
+        ctx.session.qualificationSprints = sprints;
+        ctx.session.qualificationSelectedSprint = null;
+        ctx.session.qualificationInitiatives = [];
+        ctx.session.qualificationKeyTaskSet = false;
+        ctx.session.qualificationMessageId = null;
+
+        await ctx.reply(`✅ Добавлена задача на ${formatDateRu(date)}:\n"${text}"\n\nКвалифицируем:`);
+
+        const showHint = await checkHintAndMark(user.id, 'hint_qualify_why');
+        if (showHint) {
+          await ctx.reply(
+            '💡 *Зачем это?* Выбирая инициативу, вы помечаете задачу как стратегическую — так считается SFI и видно, куда уходит фокус.',
+            { parse_mode: 'Markdown' }
+          );
+        }
+
+        await startQualificationForItem(ctx, items[0], sprints);
+      } catch (error) {
+        console.error('[PLAN] Single task add error:', error.message);
+        await ctx.reply('Ошибка при добавлении задачи.');
+      }
+      return;
     }
 
     // Выбор задачи по номеру в режиме редактирования
@@ -416,8 +486,7 @@ function registerPlanHandlers(bot) {
       const { data: userForDate } = await getUserByTelegramId(ctx.from.id);
       if (userForDate) setPendingPlanDate(userForDate.id, iso);
 
-      ctx.session.awaitingPlanInput = true;
-      await ctx.reply(`📝 Напишите задачи на ${dateLabel} — каждая с новой строки или через запятую:`);
+      await startSingleTaskPlanning(ctx, iso);
       return;
     }
 
@@ -484,6 +553,51 @@ function registerPlanHandlers(bot) {
     ctx.session.awaitingEditTaskNumber = false;
     ctx.session.editTasksItems = null;
     await ctx.editMessageText('❌ Редактирование отменено.');
+  });
+
+  // После квалификации: добавить ещё задачу или завершить планирование
+  bot.action('plan_add_more', async (ctx) => {
+    await ctx.answerCbQuery();
+    const date = ctx.session.singleTaskDate || getTodayDate();
+    await startSingleTaskPlanning(ctx, date);
+  });
+
+  bot.action('plan_finish_add', async (ctx) => {
+    await ctx.answerCbQuery();
+    const date = ctx.session.singleTaskDate || getTodayDate();
+    await ctx.reply(
+      'Показать инициативы без задач на эту дату?',
+      Markup.inlineKeyboard([
+        [Markup.button.callback('Да, показать', `plan_show_uncovered_yes_${date}`)],
+        [Markup.button.callback('Нет, продолжить', `plan_show_uncovered_no_${date}`)],
+      ])
+    );
+  });
+
+  bot.action(/^plan_show_uncovered_yes_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+      const date = ctx.match[1];
+      const uncoveredMsg = await getUncoveredInitiativesMessage(user.id, date);
+      if (uncoveredMsg) {
+        await ctx.reply(uncoveredMsg, { parse_mode: 'Markdown' });
+      } else {
+        await ctx.reply('✅ Все инициативы покрыты задачами.', persistentKeyboard);
+      }
+    } catch (error) {
+      console.error('[PLAN] Uncovered show error:', error.message);
+      await ctx.reply('Ошибка при загрузке инициатив без задач.');
+    } finally {
+      resetSingleTaskPlanningState(ctx);
+    }
+  });
+
+  bot.action(/^plan_show_uncovered_no_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    resetSingleTaskPlanningState(ctx);
+    await ctx.reply('Ок, продолжаем по плану.', persistentKeyboard);
   });
 
   // Квалификация шаг 1: выбор спринта
@@ -1079,6 +1193,7 @@ async function askKeyTaskQuestion(ctx, item) {
 
 async function finishQualification(ctx) {
   const date = ctx.session.qualificationDate || getTodayDate();
+  const singleTaskMode = !!ctx.session.singleTaskMode;
 
   ctx.session.qualificationItems = null;
   ctx.session.qualificationIndex = null;
@@ -1095,9 +1210,15 @@ async function finishQualification(ctx) {
   await ctx.reply('✅ Квалификация завершена!');
   await sendPlanMessages(ctx, updatedItems, { buttons: persistentKeyboard, date });
 
-  const uncoveredMsg = await getUncoveredInitiativesMessage(user.id, date);
-  if (uncoveredMsg) {
-    await ctx.reply(uncoveredMsg, { parse_mode: 'Markdown' });
+  if (singleTaskMode) {
+    await ctx.reply(
+      'Добавить ещё задачу?',
+      Markup.inlineKeyboard([
+        [Markup.button.callback('➕ Да, добавить', 'plan_add_more')],
+        [Markup.button.callback('✅ Закончить', 'plan_finish_add')],
+      ])
+    );
+    return;
   }
 
   // Подсказка: первая квалификация задач
@@ -1110,6 +1231,14 @@ async function finishQualification(ctx) {
       { parse_mode: 'Markdown' }
     );
   }
+
+  await ctx.reply(
+    'Показать инициативы без задач на эту дату?',
+    Markup.inlineKeyboard([
+      [Markup.button.callback('Да, показать', `plan_show_uncovered_yes_${date}`)],
+      [Markup.button.callback('Нет, продолжить', `plan_show_uncovered_no_${date}`)],
+    ])
+  );
 }
 
 // Возвращает сообщение об инициативах без задач на дату, или null если все покрыты

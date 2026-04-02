@@ -192,6 +192,38 @@ async function updateUserSettings(userId, { reminderMorning, reminderEvening, re
   return { data, error };
 }
 
+/**
+ * Показывать ли алерт сегодня (не чаще 1 раза в день по ключу).
+ * Если нужно показать — сразу помечает как показанный и возвращает true.
+ */
+async function shouldShowDailyAlert(userId, key, date) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('meta')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    console.error('[DB] shouldShowDailyAlert read:', error.message);
+    return false;
+  }
+
+  const meta = data?.meta || {};
+  if (meta[key] === date) return false;
+
+  const { error: upError } = await supabase
+    .from('users')
+    .update({ meta: { ...meta, [key]: date } })
+    .eq('id', userId);
+
+  if (upError) {
+    console.error('[DB] shouldShowDailyAlert update:', upError.message);
+    return false;
+  }
+
+  return true;
+}
+
 module.exports = {
   findOrCreateUser,
   getUserByTelegramId,
@@ -204,4 +236,5 @@ module.exports = {
   setDayClosePendingField,
   clearDayClosePendingField,
   clearAllDayClosePending,
+  shouldShowDailyAlert,
 };

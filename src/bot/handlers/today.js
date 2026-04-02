@@ -1,13 +1,12 @@
 const { Markup } = require('telegraf');
-const { getUserByTelegramId } = require('../../database/queries/users');
+const { getUserByTelegramId, shouldShowDailyAlert } = require('../../database/queries/users');
 const { getPlanItemsByDate, updatePlanItem } = require('../../database/queries/planItems');
 const { getTodayDate, formatDateRu } = require('../../services/planning');
 const { buildStaleDatePickerKeyboard } = require('../../utils/keyboards');
-const { getActiveSprint } = require('../../database/queries/sprints');
+const { getActiveSprint, getActiveSprints } = require('../../database/queries/sprints');
 const { getStreakInfo } = require('../../services/streak');
 const { getDayStats, formatSprintProgressBar } = require('../../services/analytics');
 const { getStaleMessage } = require('../../services/reminder');
-const { getUncoveredInitiativesMessage } = require('./plan');
 
 // Escape special chars for MarkdownV2
 function escV2(text) {
@@ -329,14 +328,28 @@ async function showToday(ctx) {
       ctx.session.todayMessageId = sent.message_id;
     }
 
-    if (items.length > 0) {
-      const uncoveredMsg = await getUncoveredInitiativesMessage(user.id, date);
-      if (uncoveredMsg) {
-        await ctx.reply(uncoveredMsg, { parse_mode: 'Markdown' });
+    console.log(`[TODAY] Shown for user ${user.id}, tasks=${items.length}`);
+
+    const { data: sprints } = await getActiveSprints(user.id);
+    const expired = (sprints || []).find((s) => s.end_date < date);
+    if (expired) {
+      const allow = await shouldShowDailyAlert(user.id, 'expiredSprintAlertShownDate', date);
+      if (allow) {
+        await ctx.reply(
+          `⚠️ Просрочен спринт: *${escV2(expired.goal_text)}*\n` +
+          `Примите решение: продлить или закрыть.`,
+          {
+            parse_mode: 'MarkdownV2',
+            ...Markup.inlineKeyboard([
+              [
+                Markup.button.callback('📅 Продлить', `extend_sprint_${expired.id}`),
+                Markup.button.callback('✅ Закрыть', `complete_sprint_${expired.id}`),
+              ],
+            ]),
+          }
+        );
       }
     }
-
-    console.log(`[TODAY] Shown for user ${user.id}, tasks=${items.length}`);
   } catch (error) {
     console.error('[TODAY] showToday error:', error.message);
     await ctx.reply('Ошибка при загрузке задач.');

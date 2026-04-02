@@ -1,6 +1,8 @@
-const { findOrCreateUser } = require('../../database/queries/users');
+const { findOrCreateUser, shouldShowDailyAlert } = require('../../database/queries/users');
 const { mainMenuKeyboard, persistentKeyboard } = require('../../utils/keyboards');
 const { getActiveSprint, formatSprint } = require('../../services/sprint');
+const { getActiveSprints } = require('../../database/queries/sprints');
+const { getTodayDate, formatDateRu } = require('../../services/planning');
 
 const DB_TIMEOUT_MS = 8000;
 
@@ -14,6 +16,33 @@ function withTimeout(promise, ms) {
 }
 
 function registerStartHandlers(bot) {
+  async function maybeShowExpiredSprintAlert(ctx, userId) {
+    const today = getTodayDate();
+    const { data: sprints } = await getActiveSprints(userId);
+    if (!sprints || sprints.length === 0) return;
+
+    const expired = sprints.find((s) => s.end_date < today);
+    if (!expired) return;
+
+    const allow = await shouldShowDailyAlert(userId, 'expiredSprintAlertShownDate', today);
+    if (!allow) return;
+
+    await ctx.reply(
+      `⚠️ Спринт просрочен: *${expired.goal_text}*\n` +
+      `📅 Дедлайн был ${formatDateRu(expired.end_date)}\n\n` +
+      'Нужно принять решение:',
+      {
+        parse_mode: 'Markdown',
+        ...require('telegraf').Markup.inlineKeyboard([
+          [
+            require('telegraf').Markup.button.callback('📅 Продлить', `extend_sprint_${expired.id}`),
+            require('telegraf').Markup.button.callback('✅ Закрыть', `complete_sprint_${expired.id}`),
+          ],
+        ]),
+      }
+    );
+  }
+
   bot.command('start', async (ctx) => {
     try {
       const telegramId = ctx.from.id;
@@ -57,6 +86,8 @@ function registerStartHandlers(bot) {
           ])
         );
       }
+
+      await maybeShowExpiredSprintAlert(ctx, user.id);
       console.log(`[START] User ${telegramId} - ${isNewUser ? 'new' : 'returning'}`);
     } catch (error) {
       console.error(`[START] DB error for ${ctx.from.id}:`, error.message, error.code);
