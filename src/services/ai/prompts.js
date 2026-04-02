@@ -9,4 +9,18 @@ function buildCoachingQuestionPrompt(stats) {
   ].join('\n');
 }
 
-module.exports = { buildCoachingQuestionPrompt };
+function buildNoStrategyPlanPrompt({ goal, area, bandwidth }) {
+  return [
+    'Ты продуктовый ассистент по фокусу.',
+    'Сформируй короткий план для пользователя без стратегии.',
+    'Верни строго 3-5 шагов на русском языке.',
+    'Каждый шаг: одна строка, конкретное действие, до 90 символов.',
+    'Никаких вводных фраз, только список шагов.',
+    `Цель: ${goal}.`,
+    `Область фокуса: ${area}.`,
+    `Доступный ресурс в день: ${bandwidth}.`,
+    'Шаги должны быть выполнимы в ближайшие 1-2 дня.',
+  ].join('\n');
+}
+
+module.exports = { buildCoachingQuestionPrompt, buildNoStrategyPlanPrompt };

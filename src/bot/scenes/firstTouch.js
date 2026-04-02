@@ -1,5 +1,7 @@
 const { Scenes, Markup } = require('telegraf');
 const { KEYBOARD_BUTTONS } = require('../../utils/keyboards');
+const { generateAiText } = require('../../services/ai/client');
+const { buildNoStrategyPlanPrompt } = require('../../services/ai/prompts');
 
 function switchBtn() {
   return Markup.button.callback('↔ Переключить ветку', 'ft_switch');
@@ -22,6 +24,44 @@ function parseBullets(text, limit = 5) {
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, limit);
+}
+
+function escapeMarkdown(text) {
+  return String(text || '').replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+}
+
+function getNoStrategyFallbackSteps(area, bw) {
+  return [
+    `Определите результат на 2 дня по области «${area}».`,
+    `Выберите 1 задачу на завтра под ресурс «${bw}».`,
+    'Забронируйте слот в календаре под эту задачу.',
+    'Подготовьте один артефакт: список, черновик или сообщение.',
+  ];
+}
+
+function normalizeAiSteps(rawText, fallbackSteps) {
+  const lines = String(rawText || '')
+    .split('\n')
+    .map((s) => s.replace(/^[-*\d.)\s]+/, '').trim())
+    .filter(Boolean)
+    .slice(0, 5);
+
+  const compact = lines.map((line) => (line.length > 90 ? line.slice(0, 87) + '...' : line));
+  if (compact.length < 3) return fallbackSteps.slice(0, 4);
+  return compact;
+}
+
+async function buildNoStrategySteps({ goal, area, bandwidth }) {
+  const fallbackSteps = getNoStrategyFallbackSteps(area, bandwidth);
+  const featureEnabled = process.env.AI_NO_STRATEGY_ENABLED === '1';
+  if (!featureEnabled) return { steps: fallbackSteps, source: 'fallback_flag_off' };
+
+  const prompt = buildNoStrategyPlanPrompt({ goal, area, bandwidth });
+  const { text, source } = await generateAiText({
+    prompt,
+    fallbackText: fallbackSteps.join('\n'),
+  });
+  return { steps: normalizeAiSteps(text, fallbackSteps), source };
 }
 
 const firstTouchScene = new Scenes.WizardScene(
@@ -296,15 +336,18 @@ const firstTouchScene = new Scenes.WizardScene(
 
     const area = ctx.wizard.state.area || 'Фокус';
     const goal = ctx.wizard.state.goal || 'цель';
+    const { steps, source } = await buildNoStrategySteps({ goal, area, bandwidth: bw });
+    const sourceLabel = source === 'ai' ? '\n\n_Подсказки сгенерированы AI v1._' : '';
 
     await ctx.reply(
       `✅ Понял.\n\n` +
-        `🎯 Цель: *${goal}*\n` +
-        `📌 Область: *${area}*\n` +
-        `⏱ Ресурс: *${bw} в день*\n\n` +
-        'Первое полезное действие на сегодня:\n' +
-        `• добавьте *1–3 задачи* по области «${area}»\n\n` +
-        'Дальше бот поможет держать фокус и закрывать день.',
+        `🎯 Цель: *${escapeMarkdown(goal)}*\n` +
+        `📌 Область: *${escapeMarkdown(area)}*\n` +
+        `⏱ Ресурс: *${escapeMarkdown(bw)} в день*\n\n` +
+        'Рекомендуемые шаги:\n' +
+        steps.map((s) => `• ${escapeMarkdown(s)}`).join('\n') +
+        '\n\nДальше — добавьте 1–3 задачи в план.' +
+        sourceLabel,
       { parse_mode: 'Markdown', ...ctaButtons() }
     );
 
