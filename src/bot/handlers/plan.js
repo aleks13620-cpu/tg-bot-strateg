@@ -92,19 +92,15 @@ function registerPlanHandlers(bot) {
         await ctx.reply('Профиль не найден. Используйте /start.');
         return;
       }
-      const sprintContext = await getSprintContext(user.id);
-      await ctx.reply(
-        sprintContext + '📅 На какую дату добавить задачи?',
-        { parse_mode: 'Markdown', ...buildDatePickerKeyboard(14) }
-      );
+      await ctx.reply('📅 На какую дату добавить задачу?', buildDatePickerKeyboard(14));
       ctx.session.singleTaskMode = true;
 
       // Подсказка: первое использование /plan
       const showHint = await checkHintAndMark(user.id, 'hint_first_plan');
       if (showHint) {
         await ctx.reply(
-          '💡 *Подсказка:*\nПривяжите задачи к инициативам спринта — они зачтутся как стратегические.\n' +
-          'SFI = доля стратегических задач среди выполненных. Цель: *70%+*',
+          '💡 *Подсказка:*\nЗадачи добавляются по одной. ' +
+          'После выбора даты бот спросит, показывать ли контекст спринтов и инициатив.',
           { parse_mode: 'Markdown' }
         );
       }

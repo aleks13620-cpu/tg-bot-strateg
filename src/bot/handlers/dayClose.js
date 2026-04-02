@@ -26,6 +26,58 @@ const { createPlanItems } = require('../../database/queries/planItems');
 const { buildDatePickerKeyboard } = require('../../utils/keyboards');
 
 function registerDayCloseHandlers(bot) {
+  // Команда /coaching — вручную открыть коучинговый вопрос
+  bot.command('coaching', async (ctx) => {
+    try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) {
+        await ctx.reply('Профиль не найден. Используйте /start.');
+        return;
+      }
+
+      const { data: pending } = await getLastUnansweredQuestion(user.id);
+      if (pending?.id && pending?.question_text) {
+        await ctx.reply(
+          `🤔 *Вопрос для размышления:*\n\n${pending.question_text}`,
+          {
+            parse_mode: 'Markdown',
+            ...Markup.inlineKeyboard([
+              [Markup.button.callback('💬 Ответить сейчас', `coaching_answer_${pending.id}`)],
+              [Markup.button.callback('⏭ Пропустить', 'coaching_skip')],
+            ]),
+          }
+        );
+        return;
+      }
+
+      const date = getUserCalendarToday(user);
+      const coaching = await generateCoaching(user.id, date);
+      if (!coaching) {
+        await ctx.reply(
+          'Пока нет коучингового вопроса. Закройте день через /close, и я предложу вопрос по итогам.',
+          persistentKeyboard
+        );
+        return;
+      }
+
+      if (coaching.questionId) {
+        const sourceLabel = coaching.source === 'ai' ? '\n\n_Сформировано с AI-подсказкой v1._' : '';
+        await ctx.reply(`${coaching.message}${sourceLabel}`, {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('💬 Ответить сейчас', `coaching_answer_${coaching.questionId}`)],
+            [Markup.button.callback('⏭ Пропустить', 'coaching_skip')],
+          ]),
+        });
+      } else {
+        await ctx.reply(coaching.message, persistentKeyboard);
+      }
+    } catch (error) {
+      console.error('[COACHING] /coaching error:', error.message);
+      await ctx.reply('Ошибка в /coaching. Попробуйте чуть позже.');
+    }
+  });
+
   // Reply keyboard: кнопка "Закрыть день"
   bot.hears('🌙 Закрыть день', async (ctx) => {
     await startDayClose(ctx);
