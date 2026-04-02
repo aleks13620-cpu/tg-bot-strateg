@@ -521,10 +521,11 @@ async function showCoaching(ctx, userId, date) {
     const coaching = await generateCoaching(userId, date);
     if (coaching) {
       if (coaching.questionId) {
-        await ctx.reply(coaching.message, {
+        const sourceLabel = coaching.source === 'ai' ? '\n\n_Сформировано с AI-подсказкой v1._' : '';
+        await ctx.reply(`${coaching.message}${sourceLabel}`, {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
-            [Markup.button.callback('💬 Ответить', `coaching_answer_${coaching.questionId}`)],
+            [Markup.button.callback('💬 Ответить сейчас', `coaching_answer_${coaching.questionId}`)],
             [Markup.button.callback('⏭ Пропустить', 'coaching_skip')],
           ]),
         });

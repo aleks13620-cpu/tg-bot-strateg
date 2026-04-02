@@ -78,11 +78,10 @@ function registerStartHandlers(bot) {
         );
       } else {
         await ctx.reply(
-          '👋 С возвращением!\n\nЧто делаем сейчас?',
+          '👋 С возвращением!\n\nОдин шаг сейчас — откройте задачи на сегодня.',
           require('telegraf').Markup.inlineKeyboard([
-            [require('telegraf').Markup.button.callback('✅ Сегодня (отметить)', 'action_today_checklist')],
-            [require('telegraf').Markup.button.callback('📋 Добавить задачи', 'action_plan_add')],
-            [require('telegraf').Markup.button.callback('🏠 Открыть меню', 'action_open_main_menu')],
+            [require('telegraf').Markup.button.callback('✅ К задачам на сегодня', 'action_today_checklist')],
+            [require('telegraf').Markup.button.callback('📋 Нужно спланировать', 'action_plan_add')],
           ])
         );
       }
@@ -165,19 +164,40 @@ function registerStartHandlers(bot) {
   bot.action('action_help_overview', async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.reply(
-      '💡 *Что умеет Стратег-Ассистент:*\n\n' +
-      '📋 *Планирование дня* — каждое утро в 8:00 (МСК) бот предложит запланировать задачи по вашим инициативам\n\n' +
-      '🌙 *Закрытие дня* — вечером в 18:00 (МСК) отмечаете что сделано, бот считает SFI\n\n' +
-      '📊 *SFI (Strategic Focus Index)* — процент задач дня, которые относятся к спринту. Показывает насколько вы сфокусированы на стратегии, а не на "текучке"\n\n' +
-      '🎯 *Спринт* — цель на 2 недели с инициативами\n' +
-      '📌 *Инициативы* — 3–5 ключевых областей работы внутри спринта\n' +
-      '✅ *Задачи* — ежедневные действия, привязанные к инициативам\n\n' +
-      '🔥 *Оперативные задачи* — срочные дела вне спринта (тоже важны, но SFI они снижают)\n\n' +
-      '📈 *Еженедельный отчёт* — итоги недели с динамикой',
+      '💡 *Коротко о боте*\n\n' +
+      '1) Планируете день по одной задаче\n' +
+      '2) Отмечаете выполнение в течение дня\n' +
+      '3) Закрываете день и видите фокус (SFI)\n\n' +
+      'Начните с ближайшего шага:',
       {
         parse_mode: 'Markdown',
         ...require('telegraf').Markup.inlineKeyboard([
-          [require('telegraf').Markup.button.callback('🚀 Создать спринт', 'action_new_sprint')],
+          [require('telegraf').Markup.button.callback('✅ Открыть сегодня', 'action_today_checklist')],
+          [require('telegraf').Markup.button.callback('📚 Подробнее о возможностях', 'action_help_details')],
+        ]),
+      }
+    );
+  });
+
+  bot.action('action_help_details', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply(
+      '📚 *Подробнее*\n\n' +
+      '• *Спринт* — цель на 1–3 недели\n' +
+      '• *Инициативы* — ключевые области внутри спринта\n' +
+      '• *Задачи* — конкретные ежедневные действия\n\n' +
+      '• Утром: планирование\n' +
+      '• Днём: выполнение\n' +
+      '• Вечером: закрытие дня и SFI\n\n' +
+      'SFI показывает долю стратегических задач среди выполненных.\n\n' +
+      'AI в v1 используется только для формулировки вечернего вопроса рефлексии. Если AI недоступен, бот работает по обычным шаблонам.\n\n' +
+      'Выберите следующий шаг:',
+      {
+        parse_mode: 'Markdown',
+        ...require('telegraf').Markup.inlineKeyboard([
+          [require('telegraf').Markup.button.callback('📋 Добавить задачу', 'action_plan_add')],
+          [require('telegraf').Markup.button.callback('🎯 Открыть спринты', 'action_current_sprint')],
+          [require('telegraf').Markup.button.callback('🏠 В меню', 'action_open_main_menu')],
         ]),
       }
     );

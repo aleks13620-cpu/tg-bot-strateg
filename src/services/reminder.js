@@ -193,13 +193,13 @@ async function getMorningMessage(userId) {
     lastCloseDate !== yesterday &&
     lastCloseDate !== date;
 
-  let text = '☀️ *Доброе утро!*\n\n';
+  let text = '☀️ *Старт дня*\n\n';
 
   // Уведомление о сбросе стрика
   if (streakBroken) {
-    text += `💔 Стрик прерван — было *${streak.current} дн.* Начни новый сегодня!\n\n`;
+    text += `💔 Стрик сброшен (было *${streak.current} дн.*). Верните ритм сегодня.\n\n`;
   } else if (streak.current >= 2) {
-    text += `🔥 Стрик: *${streak.current} дн.* подряд! Не останавливайся!\n\n`;
+    text += `🔥 Стрик: *${streak.current} дн.*\n\n`;
   }
 
   // Контекст спринта
@@ -218,7 +218,7 @@ async function getMorningMessage(userId) {
   }
 
   if (!status.hasPlan) {
-    text += '📋 На сегодня задач нет. Самое время спланировать день! 💪';
+    text += '📋 На сегодня задач нет. Запланируйте первый шаг.';
   } else {
     text += `На сегодня: *${status.total} задач*`;
     if (status.done > 0) text += ` (выполнено ${status.done})`;
@@ -254,7 +254,7 @@ async function getMorningMessage(userId) {
   return {
     text,
     keyboard: Markup.inlineKeyboard([
-      [Markup.button.callback('✅ Сегодня', 'action_today_checklist')],
+      [Markup.button.callback('✅ Открыть сегодня', 'action_today_checklist')],
     ]),
   };
 }
@@ -267,14 +267,14 @@ async function getEveningMessage(userId) {
   // Все задачи закрыты — напоминаем закрыть день и зафиксировать стрик
   if (status.allClosed) {
     return {
-      text: '🌙 *Добрый вечер!*\n\nВсе задачи выполнены 🎉 Не забудь закрыть день и зафиксировать стрик!',
+      text: '🌙 *Вечерний ритуал*\n\nЗадачи закрыты. Зафиксируйте день и стрик.',
       keyboard: Markup.inlineKeyboard([[Markup.button.callback('📊 Закрыть день', 'action_close_day')]]),
     };
   }
 
   const upcoming = await getUpcomingTasks(userId);
 
-  let text = `🌙 *Добрый вечер!*\n\nОсталось незавершённых задач: ${status.pending}. Пора подвести итоги!`;
+  let text = `🌙 *Вечерний ритуал*\n\nОсталось незавершённых: *${status.pending}*. Закройте день одним шагом.`;
 
   if (upcoming.length > 0) {
     const next = upcoming[0];
@@ -305,14 +305,14 @@ async function getMidDayMessage(userId) {
   if (stats.pending === 0) return null;
 
   const text =
-    `☀️ *Полдень!*\n\n` +
-    `Ещё есть время выполнить задачи — их осталось ${stats.pending}.\n` +
-    `Удачи! 💪`;
+    `☀️ *Проверка фокуса*\n\n` +
+    `Пока нет выполненных задач. В работе ещё *${stats.pending}*.\n` +
+    `Выберите следующую задачу и закройте её.`;
 
   return {
     text,
     keyboard: Markup.inlineKeyboard([
-      [Markup.button.callback('✅ Сегодня', 'action_today_checklist')],
+      [Markup.button.callback('✅ К задачам на сегодня', 'action_today_checklist')],
     ]),
   };
 }
@@ -337,18 +337,18 @@ async function getReactivationMessage(userId) {
 
   const { data: sprint } = await getActiveSprint(userId);
 
-  let text = '👋 *Давно не виделись!*\n\n';
+  let text = '👋 *С возвращением*\n\n';
   if (sprint) {
-    text += `Твой спринт ждёт:\n🎯 _${sprint.goal_text}_\n\n`;
-    text += 'Самое время вернуться к работе над целью!';
+    text += `В фокусе спринт:\n🎯 _${sprint.goal_text}_\n\n`;
+    text += 'Откройте задачи на сегодня и начните с одного шага.';
   } else {
-    text += 'Возвращайся — здесь ждут твои цели.';
+    text += 'Вернитесь в ритм: начните с одного шага на сегодня.';
   }
 
   return {
     text,
     keyboard: Markup.inlineKeyboard([
-      [Markup.button.callback('✅ Сегодня', 'action_today_checklist')],
+      [Markup.button.callback('✅ Вернуться к сегодня', 'action_today_checklist')],
     ]),
   };
 }
