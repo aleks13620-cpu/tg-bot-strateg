@@ -10,10 +10,15 @@ const persistentKeyboard = Markup.keyboard([
 ]).resize();
 
 const mainMenuKeyboard = Markup.inlineKeyboard([
-  [Markup.button.callback('📋 Мой план на сегодня', 'action_today_plan')],
+  [Markup.button.callback('✅ Сегодня (отметить)', 'action_today_checklist')],
+  [Markup.button.callback('📋 План и задачи', 'action_plan_view')],
   [Markup.button.callback('🎯 Текущий спринт', 'action_current_sprint')],
   [Markup.button.callback('🚀 Новый спринт', 'action_new_sprint')],
   [Markup.button.callback('📊 Аналитика', 'action_analytics')],
+  [Markup.button.callback('📊 Метрики', 'action_metrics')],
+  [Markup.button.callback('🧾 Review', 'action_review')],
+  [Markup.button.callback('🗓 Недельный разбор', 'action_weekly_review')],
+  [Markup.button.callback('💡 Помощь', 'action_help_overview')],
   [Markup.button.callback('⚙️ Настройки', 'action_settings')],
 ]);
 

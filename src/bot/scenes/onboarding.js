@@ -39,10 +39,10 @@ const onboardingScene = new Scenes.WizardScene(
         await ctx.reply(
           `✅ Цель: *${ctx.wizard.state.goal}*\n\n` +
           '— — —\n\n' +
-          '📌 *Шаг 2 из 3 — Направления*\n\n' +
-          '*Направление* — ключевая область работы.\n' +
+          '📌 *Шаг 2 из 3 — Инициативы*\n\n' +
+          '*Инициатива* — ключевая область работы.\n' +
           '_Пример: "Встречи с клиентами" · "Работа над продуктом"_\n\n' +
-          'Напишите первое направление:',
+          'Напишите первую инициативу:',
           { parse_mode: 'Markdown' }
         );
         return ctx.wizard.next();
@@ -51,7 +51,7 @@ const onboardingScene = new Scenes.WizardScene(
       if (data === 'onboarding_type_monthly') {
         await ctx.answerCbQuery();
         ctx.wizard.state.sprintType = 'monthly_goal';
-        // Пропускаем шаг направлений — сразу к длительности
+        // Пропускаем шаг инициатив — сразу к длительности
         await showDurationPrompt(ctx);
         return ctx.wizard.selectStep(3);
       }
@@ -88,7 +88,7 @@ const onboardingScene = new Scenes.WizardScene(
     return; // остаёмся на шаге 1
   },
 
-  // Шаг 2: Собираем направления (1–5)
+  // Шаг 2: Собираем инициативы (1–5)
   async (ctx) => {
     if (ctx.callbackQuery) {
       if (ctx.callbackQuery.data === 'onboarding_done') {
@@ -106,7 +106,7 @@ const onboardingScene = new Scenes.WizardScene(
     }
 
     if (!ctx.message?.text) {
-      await ctx.reply('Пожалуйста, напишите направление текстом.');
+      await ctx.reply('Пожалуйста, напишите инициативу текстом.');
       return;
     }
 
@@ -121,7 +121,7 @@ const onboardingScene = new Scenes.WizardScene(
 
     if (count >= 5) {
       await ctx.reply(
-        `✅ Направление ${count}: *${direction}*\n\nМаксимум направлений добавлено (5).`,
+        `✅ Инициатива ${count}: *${direction}*\n\nМаксимум инициатив добавлено (5).`,
         { parse_mode: 'Markdown' }
       );
       await showDurationPrompt(ctx);
@@ -129,7 +129,7 @@ const onboardingScene = new Scenes.WizardScene(
     }
 
     await ctx.reply(
-      `✅ Направление ${count}: *${direction}*\n\nДобавьте ещё или нажмите *"Готово"*:`,
+      `✅ Инициатива ${count}: *${direction}*\n\nДобавьте ещё или нажмите *"Готово"*:`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
@@ -175,7 +175,7 @@ const onboardingScene = new Scenes.WizardScene(
     summary += `🎯 *${isMonthly ? 'Цель 30 дней' : `Цель (${duration} дней)`}:*\n${goal}\n\n`;
 
     if (!isMonthly && directions.length > 0) {
-      summary += `📌 *Направления:*\n`;
+      summary += `📌 *Инициативы:*\n`;
       directions.forEach((d, i) => { summary += `${i + 1}. ${d}\n`; });
     }
 
@@ -255,12 +255,12 @@ const onboardingScene = new Scenes.WizardScene(
             `🎉 *Спринт создан!*\n\n` +
             `🎯 *Цель:* ${sprint.goal_text}\n` +
             `📅 ${new Date(sprint.start_date).toLocaleDateString('ru-RU')} — ${new Date(sprint.end_date).toLocaleDateString('ru-RU')}\n` +
-            `📌 Направлений: ${sprint.initiatives.length}\n\n` +
+            `📌 Инициатив: ${sprint.initiatives.length}\n\n` +
             `*Что дальше?*\n` +
             `• Кнопка *"📋 Добавить задачи"* — планируйте день\n` +
             `• Вечером закрывайте день кнопкой *"🌙 Закрыть день"*\n` +
             `• Утром бот пришлёт напоминание с планом\n\n` +
-            `_Задачи по направлениям = стратегические. SFI показывает ваш баланс._`;
+            `_Задачи по инициативам = стратегические. SFI показывает ваш баланс._`;
 
           await ctx.reply(successMsg, { parse_mode: 'Markdown' });
         }

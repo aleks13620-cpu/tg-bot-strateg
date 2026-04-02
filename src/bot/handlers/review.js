@@ -25,6 +25,12 @@ function registerReviewHandlers(bot) {
     await ctx.scene.enter('quarterly_review');
   });
 
+  // action_review — вход из меню
+  bot.action('action_review', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.scene.enter('quarterly_review');
+  });
+
   // /reviews — история завершённых обзоров
   bot.command('reviews', async (ctx) => {
     const { data: user } = await getUserByTelegramId(ctx.from.id);

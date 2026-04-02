@@ -16,6 +16,7 @@ const { registerSettingsHandlers } = require('./handlers/settings');
 const { registerAdminHandlers } = require('./handlers/admin');
 const { onboardingScene } = require('./scenes/onboarding');
 const { quarterlyReviewScene } = require('./scenes/quarterlyReview');
+const { firstTouchScene } = require('./scenes/firstTouch');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -47,7 +48,7 @@ bot.catch((err, ctx) => {
 bot.use(loggerMiddleware);
 
 // Session + Scenes
-const stage = new Scenes.Stage([onboardingScene, quarterlyReviewScene]);
+const stage = new Scenes.Stage([onboardingScene, quarterlyReviewScene, firstTouchScene]);
 bot.use(session());
 bot.use(stage.middleware());
 

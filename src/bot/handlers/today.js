@@ -135,7 +135,7 @@ function registerTodayHandlers(bot) {
     await showToday(ctx);
   });
 
-  bot.action('action_today_plan', async (ctx) => {
+  bot.action('action_today_checklist', async (ctx) => {
     await ctx.answerCbQuery();
     await showToday(ctx);
   });

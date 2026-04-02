@@ -236,6 +236,11 @@ function registerDayCloseHandlers(bot) {
       } else {
         await ctx.editMessageText('⏭ Время не зафиксировано');
       }
+
+      // Compact day close flow: advance to next task (if active)
+      if (ctx.session?.dayCloseFlow) {
+        await advanceDayCloseFlow(ctx);
+      }
     } catch (error) {
       console.error('[DAYCLOSE] Actual time error:', error.message);
     }
@@ -346,6 +351,11 @@ function registerDayCloseHandlers(bot) {
         }
       }
       await ctx.editMessageText(`⏭ Причина: ${SKIP_REASON_LABELS[code] || 'Другое'}`);
+
+      // Compact day close flow: advance to next task (if active)
+      if (ctx.session?.dayCloseFlow) {
+        await advanceDayCloseFlow(ctx);
+      }
     } catch (error) {
       console.error('[DAYCLOSE] Skip reason error:', error.message);
     }
@@ -463,6 +473,11 @@ function registerDayCloseHandlers(bot) {
         return;
       }
       await ctx.reply(`✅ Зафиксировано: ${formatMinutesLabel(minutes)}`);
+
+      // Compact day close flow: advance to next task (if active)
+      if (ctx.session?.dayCloseFlow) {
+        await advanceDayCloseFlow(ctx);
+      }
       return;
     }
 
@@ -552,34 +567,21 @@ async function startDayClose(ctx) {
       return;
     }
 
-    await ctx.reply(
-      '🌙 *Закрытие дня*\n\n' +
-      `Осталось задач: ${pendingItems.length}\n` +
-      'Отметьте статус каждой задачи:',
-      { parse_mode: 'Markdown' }
-    );
+    // Compact flow: one message, edited as user progresses
+    ctx.session.dayCloseFlow = {
+      date,
+      pendingIds: pendingItems.map((i) => i.id),
+      idx: 0,
+      messageId: null,
+      itemsById: Object.fromEntries(
+        pendingItems.map((i) => {
+          const tag = i.initiative ? ` 🎯 ${i.initiative.title}` : i.is_strategic ? ' 📊' : ' 🔥';
+          return [i.id, { text: i.text_raw, tag }];
+        })
+      ),
+    };
 
-    for (const item of pendingItems) {
-      const strategic = item.initiative
-        ? ` 🎯 ${item.initiative.title}`
-        : item.is_strategic ? ' 📊' : ' 🔥';
-      await ctx.reply(
-        `${item.text_raw}${strategic}`,
-        Markup.inlineKeyboard([
-          [
-            Markup.button.callback('✅ Сделано', `dayclose_done_${item.id}`),
-            Markup.button.callback('⏭ Пропущено', `dayclose_skip_${item.id}`),
-          ],
-        ])
-      );
-    }
-
-    await ctx.reply(
-      'После отметки всех задач нажмите кнопку ниже:',
-      Markup.inlineKeyboard([
-        [Markup.button.callback('📊 Показать итоги дня', 'dayclose_summary')],
-      ])
-    );
+    await renderDayCloseCurrent(ctx);
   } catch (error) {
     console.error('[DAYCLOSE] Error:', error.message);
     await ctx.reply('Ошибка при закрытии дня.');
@@ -600,26 +602,97 @@ async function handleTaskStatus(ctx, itemId, status) {
       return;
     }
 
-    const icon = status === 'done' ? '✅' : '⏭';
-    await ctx.editMessageText(`${icon} ${ctx.callbackQuery.message.text}`);
+    const flow = ctx.session?.dayCloseFlow || null;
+    const meta = flow?.itemsById?.[itemId] || null;
+    const label = meta ? `${meta.text}${meta.tag || ''}` : ctx.callbackQuery?.message?.text || '';
 
     if (status === 'done') {
-      await ctx.reply('⏱ Сколько времени ушло на задачу?', buildActualTimeKeyboard(itemId));
+      await ctx.editMessageText(
+        `✅ Сделано:\n${label}\n\n⏱ Сколько времени ушло?`,
+        buildActualTimeKeyboard(itemId)
+      );
+      return;
     }
 
     if (status === 'skipped') {
-      // Проверяем — может причина уже установлена (повторное закрытие дня)
       const { data: item } = await getPlanItemById(itemId);
       if (!item?.skip_reason) {
-        await ctx.reply(
-          '❓ Почему задача не выполнена?',
+        await ctx.editMessageText(
+          `⏭ Пропущено:\n${label}\n\n❓ Почему?`,
           buildSkipReasonKeyboard(itemId)
         );
+      } else if (ctx.session?.dayCloseFlow) {
+        await advanceDayCloseFlow(ctx);
       }
+      return;
     }
   } catch (error) {
     console.error('[DAYCLOSE] Status update error:', error.message);
   }
+}
+
+async function renderDayCloseCurrent(ctx) {
+  const flow = ctx.session?.dayCloseFlow;
+  if (!flow) return;
+
+  const { idx, pendingIds } = flow;
+  const total = pendingIds.length;
+
+  if (idx >= total) {
+    const text =
+      '🌙 *Закрытие дня*\n\n' +
+      '✅ Все задачи отмечены.\n\n' +
+      'Нажмите, чтобы посмотреть итоги:';
+
+    const opts = { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('📊 Итоги дня', 'dayclose_summary')]]) };
+
+    if (flow.messageId) {
+      try {
+        await ctx.telegram.editMessageText(ctx.chat.id, flow.messageId, undefined, text, opts);
+        return;
+      } catch {}
+    }
+
+    const sent = await ctx.reply(text, opts);
+    flow.messageId = sent.message_id;
+    return;
+  }
+
+  const itemId = pendingIds[idx];
+  const meta = flow.itemsById?.[itemId];
+  const label = meta ? `${meta.text}${meta.tag || ''}` : 'Задача';
+
+  const text =
+    '🌙 *Закрытие дня*\n\n' +
+    `Задача ${idx + 1}/${total}:\n` +
+    `${label}\n\n` +
+    'Отметьте статус:';
+
+  const opts = {
+    parse_mode: 'Markdown',
+    ...Markup.inlineKeyboard([
+      [
+        Markup.button.callback('✅ Сделано', `dayclose_done_${itemId}`),
+        Markup.button.callback('⏭ Пропущено', `dayclose_skip_${itemId}`),
+      ],
+    ]),
+  };
+
+  if (flow.messageId) {
+    try {
+      await ctx.telegram.editMessageText(ctx.chat.id, flow.messageId, undefined, text, opts);
+      return;
+    } catch {}
+  }
+
+  const sent = await ctx.reply(text, opts);
+  flow.messageId = sent.message_id;
+}
+
+async function advanceDayCloseFlow(ctx) {
+  if (!ctx.session?.dayCloseFlow) return;
+  ctx.session.dayCloseFlow.idx += 1;
+  await renderDayCloseCurrent(ctx);
 }
 
 const SKIP_REASON_MAP = {

@@ -32,29 +32,30 @@ function registerStartHandlers(bot) {
 
       if (isNewUser) {
         await ctx.reply(
-          '👋 Привет! Я *Стратег-Ассистент* — помогаю предпринимателям двигаться к стратегическим целям, не теряясь в текучке.\n\n' +
-          '📐 *Как это работает — 3 уровня:*\n\n' +
-          '1️⃣ *СПРИНТ* — ваша главная цель на 2 недели\n' +
-          '_Пример: "Расширить ближний круг"_\n\n' +
-          '2️⃣ *ИНИЦИАТИВЫ* — ключевые направления для достижения цели\n' +
-          '_Пример: организовать деловые встречи · посещать бизнес-мероприятия · вступить в бизнес-клуб · наладить контакт с Иваном_\n\n' +
-          '3️⃣ *ЗАДАЧИ* — конкретные действия на каждый день\n' +
-          '_Пример (по инициативе "Вступить в бизнес-клуб"): найти клубы в городе → обзвонить → записаться на встречу_\n\n' +
-          '📊 Каждый вечер бот считает *SFI* (Strategic Focus Index) — процент задач, которые двигали вас к цели спринта, а не просто "тушили пожары".',
+          '👋 Привет! Я *Стратег-Ассистент*.\n\n' +
+          'Помогаю держать фокус на цели: *спринт → инициативы → задачи*.\n' +
+          'Давайте начнём — зафиксируем цель и первый шаг.',
           { parse_mode: 'Markdown' }
         );
         await ctx.reply(
-          '🚀 *Готовы начать?*\n\nСоздайте первый спринт — задайте цель на ближайшие 2 недели.',
+          '🚀 *Готовы?*',
           {
             parse_mode: 'Markdown',
             ...require('telegraf').Markup.inlineKeyboard([
-              [require('telegraf').Markup.button.callback('🚀 Создать первый спринт', 'action_new_sprint')],
-              [require('telegraf').Markup.button.callback('💡 Что ещё умеет бот', 'action_help_overview')],
+              [require('telegraf').Markup.button.callback('🚀 Начать', 'action_begin')],
+              [require('telegraf').Markup.button.callback('💡 Как это работает', 'action_help_overview')],
             ]),
           }
         );
       } else {
-        await ctx.reply('👋 С возвращением!\n\nВыберите действие:', mainMenuKeyboard);
+        await ctx.reply(
+          '👋 С возвращением!\n\nЧто делаем сейчас?',
+          require('telegraf').Markup.inlineKeyboard([
+            [require('telegraf').Markup.button.callback('✅ Сегодня (отметить)', 'action_today_checklist')],
+            [require('telegraf').Markup.button.callback('📋 Добавить задачи', 'action_plan_add')],
+            [require('telegraf').Markup.button.callback('🏠 Открыть меню', 'action_open_main_menu')],
+          ])
+        );
       }
       console.log(`[START] User ${telegramId} - ${isNewUser ? 'new' : 'returning'}`);
     } catch (error) {
@@ -84,7 +85,19 @@ function registerStartHandlers(bot) {
     }
   });
 
-  // action_today_plan обрабатывается в handlers/plan.js
+  // План/Сегодня разведены: action_today_checklist (today.js) и action_plan_view (plan.js)
+
+  bot.action('action_open_main_menu', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply('Главное меню:', mainMenuKeyboard);
+  });
+
+  // Главный CTA на первом входе (пока ведёт в существующий онбординг спринта)
+  // На этапе C будет переключено на first_touch.
+  bot.action('action_begin', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.scene.enter('first_touch');
+  });
 
   bot.action('action_current_sprint', async (ctx) => {
     await ctx.answerCbQuery();
@@ -126,7 +139,7 @@ function registerStartHandlers(bot) {
       '🌙 *Закрытие дня* — вечером в 18:00 (МСК) отмечаете что сделано, бот считает SFI\n\n' +
       '📊 *SFI (Strategic Focus Index)* — процент задач дня, которые относятся к спринту. Показывает насколько вы сфокусированы на стратегии, а не на "текучке"\n\n' +
       '🎯 *Спринт* — цель на 2 недели с инициативами\n' +
-      '📌 *Инициативы* — 3–5 ключевых направлений внутри спринта\n' +
+      '📌 *Инициативы* — 3–5 ключевых областей работы внутри спринта\n' +
       '✅ *Задачи* — ежедневные действия, привязанные к инициативам\n\n' +
       '🔥 *Оперативные задачи* — срочные дела вне спринта (тоже важны, но SFI они снижают)\n\n' +
       '📈 *Еженедельный отчёт* — итоги недели с динамикой',

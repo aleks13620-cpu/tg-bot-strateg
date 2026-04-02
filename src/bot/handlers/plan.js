@@ -23,6 +23,40 @@ function withTimeout(promise, ms) {
 }
 
 function registerPlanHandlers(bot) {
+  async function showEditTasks(ctx) {
+    const { data: user } = await getUserByTelegramId(ctx.from.id);
+    if (!user) return;
+
+    const { data: items } = await getTodayPlan(user.id);
+    if (items.length === 0) {
+      await ctx.reply('Нет задач для редактирования.');
+      return;
+    }
+
+    const shown = items.slice(0, 15);
+    ctx.session.editTasksItems = shown.map((i) => ({
+      id: i.id,
+      text_raw: i.text_raw,
+      tag: i.initiative ? ` [${i.initiative.title}]` : i.is_strategic ? ' 📊' : ' 🔥',
+    }));
+    ctx.session.awaitingEditTaskNumber = true;
+
+    let text = '✏️ *Редактирование задач (сегодня)*\n\n';
+    shown.forEach((i, idx) => {
+      text += `${idx + 1}. ${i.text_raw}${i.initiative ? ` [${i.initiative.title}]` : i.is_strategic ? ' 📊' : ' 🔥'}\n`;
+    });
+    if (items.length > shown.length) text += `\n_Показано ${shown.length} из ${items.length}._`;
+    text += '\n\nОтветьте номером задачи, чтобы выбрать её.\nНапример: *2*';
+
+    await ctx.reply(
+      text,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'edit_tasks_cancel')]]),
+      }
+    );
+  }
+
   // Reply keyboard: кнопка "Добавить задачи" — показываем дейтпикер
   bot.hears('📋 Добавить задачи', async (ctx) => {
     try {
@@ -41,7 +75,7 @@ function registerPlanHandlers(bot) {
       const showHint = await checkHintAndMark(user.id, 'hint_first_plan');
       if (showHint) {
         await ctx.reply(
-          '💡 *Подсказка:*\nПривяжите задачи к направлениям спринта — они зачтутся как стратегические.\n' +
+          '💡 *Подсказка:*\nПривяжите задачи к инициативам спринта — они зачтутся как стратегические.\n' +
           'SFI = доля стратегических задач среди выполненных. Цель: *70%+*',
           { parse_mode: 'Markdown' }
         );
@@ -52,8 +86,8 @@ function registerPlanHandlers(bot) {
     }
   });
 
-  // Кнопка "Мой план на сегодня" из главного меню
-  bot.action('action_today_plan', async (ctx) => {
+  // План и задачи: просмотр плана на сегодня
+  bot.action('action_plan_view', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const { data: user } = await getUserByTelegramId(ctx.from.id);
@@ -78,8 +112,8 @@ function registerPlanHandlers(bot) {
 
       await sendPlanMessages(ctx, items, {
         buttons: Markup.inlineKeyboard([
-          [Markup.button.callback('➕ Добавить задачи', 'action_add_tasks')],
-          [Markup.button.callback('✏️ Редактировать задачи', 'action_edit_tasks')],
+          [Markup.button.callback('➕ Добавить задачи', 'action_plan_add')],
+          [Markup.button.callback('✏️ Редактировать задачи', 'action_plan_edit')],
         ]),
       });
     } catch (error) {
@@ -113,8 +147,8 @@ function registerPlanHandlers(bot) {
 
       await sendPlanMessages(ctx, items, {
         buttons: Markup.inlineKeyboard([
-          [Markup.button.callback('➕ Добавить задачи', 'action_add_tasks')],
-          [Markup.button.callback('✏️ Редактировать задачи', 'action_edit_tasks')],
+          [Markup.button.callback('➕ Добавить задачи', 'action_plan_add')],
+          [Markup.button.callback('✏️ Редактировать задачи', 'action_plan_edit')],
         ]),
       });
     } catch (error) {
@@ -123,10 +157,21 @@ function registerPlanHandlers(bot) {
     }
   });
 
-  // Кнопка "Добавить задачи" к существующему плану — показываем дейтпикер
-  bot.action('action_add_tasks', async (ctx) => {
+  // Добавить задачи — дейтпикер
+  bot.action('action_plan_add', async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.reply('📅 На какую дату добавить задачи?', buildDatePickerKeyboard(14));
+  });
+
+  // Редактировать задачи — открыть список задач на сегодня
+  bot.action('action_plan_edit', async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      await showEditTasks(ctx);
+    } catch (error) {
+      console.error('[PLAN] Edit error:', error.message);
+      await ctx.reply('Ошибка при загрузке задач.');
+    }
   });
 
   // Выбор даты из дейтпикера (для добавления задач и пересланных сообщений)
@@ -262,7 +307,41 @@ function registerPlanHandlers(bot) {
       ctx.session.awaitingPlanInput = false;
       ctx.session.awaitingDateInput = false;
       ctx.session.pendingForwardText = null;
+      ctx.session.awaitingEditTaskNumber = false;
+      ctx.session.editTasksItems = null;
       return next();
+    }
+
+    // Выбор задачи по номеру в режиме редактирования
+    if (ctx.session?.awaitingEditTaskNumber) {
+      const t = ctx.message.text.trim();
+      if (t.toLowerCase() === 'отмена') {
+        ctx.session.awaitingEditTaskNumber = false;
+        ctx.session.editTasksItems = null;
+        await ctx.reply('Ок, отменил редактирование.', persistentKeyboard);
+        return;
+      }
+      const n = parseInt(t, 10);
+      const list = ctx.session.editTasksItems || [];
+      if (!Number.isFinite(n) || n < 1 || n > list.length) {
+        await ctx.reply(`Не понял номер. Введите число от 1 до ${list.length} (или «Отмена»).`);
+        return;
+      }
+      const chosen = list[n - 1];
+      await ctx.reply(
+        `Выбрано: *${chosen.text_raw}*${chosen.tag || ''}`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback('🗑 Удалить', `action_delete_${chosen.id}`),
+              Markup.button.callback('🔄 Сменить инициативу', `action_requalify_${chosen.id}`),
+            ],
+            [Markup.button.callback('⏭ Выбрать другую', 'action_plan_edit')],
+          ]),
+        }
+      );
+      return;
     }
 
     // Ручной ввод планового времени
@@ -382,11 +461,29 @@ function registerPlanHandlers(bot) {
       ctx.session.qualificationMessageId = null;
 
       await ctx.reply(`✅ Добавлено задач: ${items.length} на ${formatDateRu(date)}\n\nТеперь квалифицируем каждую задачу:`);
+
+      // Микро-объяснение перед первой квалификацией (один раз)
+      const showHint = await checkHintAndMark(user.id, 'hint_qualify_why');
+      if (showHint) {
+        await ctx.reply(
+          '💡 *Зачем это?* Выбирая инициативу, вы помечаете задачу как стратегическую — так считается SFI и видно, куда уходит фокус.',
+          { parse_mode: 'Markdown' }
+        );
+      }
+
       await startQualificationForItem(ctx, items[0], sprints);
     } catch (error) {
       console.error('[PLAN] Error adding tasks:', error.message);
       await ctx.reply('Ошибка при добавлении задач.');
     }
+  });
+
+  // Отмена режима редактирования задач
+  bot.action('edit_tasks_cancel', async (ctx) => {
+    await ctx.answerCbQuery();
+    ctx.session.awaitingEditTaskNumber = false;
+    ctx.session.editTasksItems = null;
+    await ctx.editMessageText('❌ Редактирование отменено.');
   });
 
   // Квалификация шаг 1: выбор спринта
@@ -503,29 +600,7 @@ function registerPlanHandlers(bot) {
   bot.action('action_edit_tasks', async (ctx) => {
     await ctx.answerCbQuery();
     try {
-      const { data: user } = await getUserByTelegramId(ctx.from.id);
-      if (!user) return;
-
-      const { data: items } = await getTodayPlan(user.id);
-      if (items.length === 0) {
-        await ctx.reply('Нет задач для редактирования.');
-        return;
-      }
-
-      await ctx.reply('✏️ Выберите задачу для редактирования:');
-
-      for (const item of items) {
-        const tag = item.initiative ? ` [${item.initiative.title}]` : item.is_strategic ? ' 📊' : ' 🔥';
-        await ctx.reply(
-          `${item.text_raw}${tag}`,
-          Markup.inlineKeyboard([
-            [
-              Markup.button.callback('🗑 Удалить', `action_delete_${item.id}`),
-              Markup.button.callback('🔄 Сменить инициативу', `action_requalify_${item.id}`),
-            ],
-          ])
-        );
-      }
+      await showEditTasks(ctx);
     } catch (error) {
       console.error('[PLAN] Edit error:', error.message);
       await ctx.reply('Ошибка при загрузке задач.');
@@ -812,7 +887,7 @@ async function getSprintContext(userId) {
     text += `🎯 *Спринт:* ${escapeMarkdown(sprint.goal_text)}\n`;
     const initiatives = sprint.initiatives || [];
     if (initiatives.length > 0) {
-      text += '*Направления:*\n';
+      text += '*Инициативы:*\n';
       initiatives.forEach((init, i) => {
         text += `  ${i + 1}\\. ${escapeMarkdown(init.title)}\n`;
       });
@@ -1030,7 +1105,7 @@ async function finishQualification(ctx) {
   if (showHint) {
     await ctx.reply(
       '💡 *SFI — Strategic Focus Index*\n' +
-      'Доля выполненных задач, связанных с направлениями спринта.\n' +
+      'Доля выполненных задач, связанных с инициативами спринта.\n' +
       'Цель: *70%+* — работа над главным, а не текучкой.',
       { parse_mode: 'Markdown' }
     );
@@ -1058,7 +1133,7 @@ async function getUncoveredInitiativesMessage(userId, date) {
 
     if (uncovered.length === 0) return null;
 
-    let text = '💡 *Направления без задач на сегодня:*\n';
+    let text = '💡 *Инициативы без задач на сегодня:*\n';
     for (const { sprint, initiatives } of uncovered) {
       if (sprints.length > 1) {
         const name = sprint.goal_text.length > 40 ? sprint.goal_text.slice(0, 38) + '…' : sprint.goal_text;

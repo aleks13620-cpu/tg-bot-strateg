@@ -34,7 +34,7 @@ function registerUploadHandlers(bot) {
 
       await ctx.reply(output, Markup.inlineKeyboard([
         [Markup.button.callback('🚀 Создать спринт', 'action_new_sprint')],
-        [Markup.button.callback('📋 Спланировать день', 'action_today_plan')],
+        [Markup.button.callback('📋 Добавить задачи', 'action_plan_add')],
       ]));
     } catch (error) {
       console.error('[UPLOAD] Error:', error.message);

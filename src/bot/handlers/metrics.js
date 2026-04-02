@@ -46,6 +46,14 @@ function registerMetricsHandlers(bot) {
     await showMetrics(ctx, user.id);
   });
 
+  // action_metrics — вход из меню
+  bot.action('action_metrics', async (ctx) => {
+    await ctx.answerCbQuery();
+    const { data: user } = await getUserByTelegramId(ctx.from.id);
+    if (!user) return;
+    await showMetrics(ctx, user.id);
+  });
+
   // metric_add_SPRINTID — начать добавление метрики
   bot.action(/^metric_add_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery();

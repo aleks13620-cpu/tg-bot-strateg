@@ -254,7 +254,7 @@ async function getMorningMessage(userId) {
   return {
     text,
     keyboard: Markup.inlineKeyboard([
-      [Markup.button.callback('📋 Мой план', 'action_today_plan')],
+      [Markup.button.callback('✅ Сегодня', 'action_today_checklist')],
     ]),
   };
 }
@@ -312,7 +312,7 @@ async function getMidDayMessage(userId) {
   return {
     text,
     keyboard: Markup.inlineKeyboard([
-      [Markup.button.callback('📋 Мой план', 'action_today_plan')],
+      [Markup.button.callback('✅ Сегодня', 'action_today_checklist')],
     ]),
   };
 }
@@ -348,7 +348,7 @@ async function getReactivationMessage(userId) {
   return {
     text,
     keyboard: Markup.inlineKeyboard([
-      [Markup.button.callback('📋 Открыть план', 'action_today_plan')],
+      [Markup.button.callback('✅ Сегодня', 'action_today_checklist')],
     ]),
   };
 }
@@ -383,9 +383,9 @@ async function getWeeklyMessage(userId) {
   const sfiChallenge = activeSprint?.sfi_challenge || null;
   let text = formatWeekStats(stats, weekStartStr, weekEndStr, prevStats, financialGoal, sfiChallenge);
 
-  // Таблица выполнения по направлениям
+  // Таблица выполнения по инициативам
   if (stats.byInitiativeStats && Object.keys(stats.byInitiativeStats).length > 0) {
-    text += '\n\n📌 *По направлениям:*\n';
+    text += '\n\n📌 *По инициативам:*\n';
     for (const [title, s] of Object.entries(stats.byInitiativeStats)) {
       const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0;
       const warn = pct === 0 ? ' ⚠️' : '';
