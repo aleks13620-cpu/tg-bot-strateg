@@ -38,6 +38,18 @@ function registerPlanHandlers(bot) {
     );
   }
 
+  async function askPlanningContextChoice(ctx, userId, dateIso) {
+    ctx.session.singleTaskMode = true;
+    ctx.session.singleTaskDate = dateIso;
+    await ctx.reply(
+      `Показать список спринтов и инициатив перед добавлением задачи на ${formatDateRu(dateIso)}?`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback('Да, показать', `plan_show_context_yes_${dateIso}`)],
+        [Markup.button.callback('Нет, сразу добавить', `plan_show_context_no_${dateIso}`)],
+      ])
+    );
+  }
+
   async function showEditTasks(ctx) {
     const { data: user } = await getUserByTelegramId(ctx.from.id);
     if (!user) return;
@@ -280,8 +292,8 @@ function registerPlanHandlers(bot) {
       return;
     }
 
-    // Обычное добавление задач: по одной в пошаговом режиме
-    await startSingleTaskPlanning(ctx, dateParam);
+    // Обычное добавление задач: сначала спрашиваем, показывать ли контекст
+    await askPlanningContextChoice(ctx, user.id, dateParam);
   });
 
   // Обработчик пересланных сообщений (должен быть ДО bot.on('text'))
@@ -486,7 +498,7 @@ function registerPlanHandlers(bot) {
       const { data: userForDate } = await getUserByTelegramId(ctx.from.id);
       if (userForDate) setPendingPlanDate(userForDate.id, iso);
 
-      await startSingleTaskPlanning(ctx, iso);
+      await askPlanningContextChoice(ctx, userForDate?.id, iso);
       return;
     }
 
@@ -559,6 +571,33 @@ function registerPlanHandlers(bot) {
   bot.action('plan_add_more', async (ctx) => {
     await ctx.answerCbQuery();
     const date = ctx.session.singleTaskDate || getTodayDate();
+    await startSingleTaskPlanning(ctx, date);
+  });
+
+  // Перед вводом задачи: показать (или не показывать) контекст спринтов/инициатив
+  bot.action(/^plan_show_context_yes_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      const { data: user } = await getUserByTelegramId(ctx.from.id);
+      if (!user) return;
+      const date = ctx.match[1];
+      const sprintContext = await getSprintContext(user.id);
+      await ctx.reply(
+        sprintContext + `📝 Теперь введите одну задачу на ${formatDateRu(date)}:`,
+        { parse_mode: 'Markdown' }
+      );
+      ctx.session.singleTaskMode = true;
+      ctx.session.singleTaskDate = date;
+      ctx.session.awaitingSingleTaskText = true;
+    } catch (error) {
+      console.error('[PLAN] show context error:', error.message);
+      await ctx.reply('Ошибка при загрузке списка спринтов и инициатив.');
+    }
+  });
+
+  bot.action(/^plan_show_context_no_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const date = ctx.match[1];
     await startSingleTaskPlanning(ctx, date);
   });
 
@@ -1206,9 +1245,7 @@ async function finishQualification(ctx) {
   ctx.session.qualificationMessageId = null;
 
   const { data: user } = await withTimeout(getUserByTelegramId(ctx.from.id), DB_TIMEOUT_MS);
-  const { data: updatedItems } = await withTimeout(getPlanForDate(user.id, date), DB_TIMEOUT_MS);
   await ctx.reply('✅ Квалификация завершена!');
-  await sendPlanMessages(ctx, updatedItems, { buttons: persistentKeyboard, date });
 
   if (singleTaskMode) {
     await ctx.reply(
@@ -1220,6 +1257,9 @@ async function finishQualification(ctx) {
     );
     return;
   }
+
+  const { data: updatedItems } = await withTimeout(getPlanForDate(user.id, date), DB_TIMEOUT_MS);
+  await sendPlanMessages(ctx, updatedItems, { buttons: persistentKeyboard, date });
 
   // Подсказка: первая квалификация задач
   const showHint = await checkHintAndMark(user.id, 'hint_first_qualify');
